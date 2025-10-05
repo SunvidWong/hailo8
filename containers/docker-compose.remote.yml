@@ -1,0 +1,549 @@
+# Hailo8 容器化服务 - 远程部署配置
+# 适用于生产环境和远程服务器部署
+
+version: '3.8'
+
+services:
+  # Hailo8 运行时容器 (生产配置)
+  hailo-runtime:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+      args:
+        - BUILD_DATE=${BUILD_DATE:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}
+        - VERSION=${VERSION:-2.0.0}
+        - VCS_REF=${VCS_REF:-unknown}
+    image: hailo8/runtime:${VERSION:-2.0.0}
+    container_name: hailo-runtime
+    restart: unless-stopped
+    privileged: true  # 需要特权模式加载内核模块
+    networks:
+      - hailo-network
+    ports:
+      - "8000:8000"    # HTTP API
+      - "50051:50051"  # gRPC服务
+      - "9090:9090"    # Prometheus指标
+    volumes:
+      # 设备访问 (根据实际设备路径调整)
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      # 内核模块 (如果需要)
+      - /lib/modules:/lib/modules:ro
+      # 模型文件存储 (使用挂载卷)
+      - hailo_models:/app/models:ro
+      # 日志存储
+      - hailo_logs:/app/logs
+      # 临时文件存储
+      - hailo_temp:/app/temp
+      # 配置文件
+      - ./config/hailo.env:/app/.env:ro
+    environment:
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - HAILO_GRPC_PORT=50051
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEBUG=${DEBUG:-false}
+      - TZ=${TZ:-Asia/Shanghai}
+      - REDIS_URL=redis://redis:6379
+      - PROMETHEUS_ENABLED=true
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-this-in-production}
+    devices:
+      # PCIe设备访问
+      - /dev/dri:/dev/dri
+      - /dev/vfio:/dev/vfio
+    healthcheck:
+      test: ["CMD", "/app/scripts/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hailo-runtime.rule=Host(`${DOMAIN:-hailo-api.local}`)"
+      - "traefik.http.services.hailo-runtime.loadbalancer.server.port=8000"
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "monitoring.prometheus.scrape=true"
+      - "monitoring.prometheus.port=9090"
+
+  # Redis缓存集群 (生产配置)
+  redis:
+    image: redis:7-alpine
+    container_name: hailo-redis
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf --appendonly yes
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+    sysctls:
+      - net.core.somaxconn=65535
+
+  # Nginx反向代理 (生产配置)
+  nginx:
+    image: nginx:alpine
+    container_name: hailo-nginx
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+      - nginx_cache:/var/cache/nginx
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      hailo-runtime:
+        condition: service_healthy
+      hailo-web-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Web前端应用 (生产配置)
+  hailo-web-app:
+    build:
+      context: ./hailo-web-app
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=${API_URL:-https://${DOMAIN:-hailo-api.local}}
+        - REACT_APP_WS_URL=${WS_URL:-wss://${DOMAIN:-hailo-api.local}}
+    image: hailo8/web-app:${VERSION:-2.0.0}
+    container_name: hailo-web-app
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # AI服务 (生产配置)
+  hailo-ai-service:
+    build:
+      context: ./hailo-ai-service
+      dockerfile: Dockerfile
+    image: hailo8/ai-service:${VERSION:-2.0.0}
+    container_name: hailo-ai-service
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    ports:
+      - "8080:8080"
+    volumes:
+      - hailo_data:/app/data
+      - hailo_uploads:/app/uploads
+      - hailo_outputs:/app/outputs
+    environment:
+      - HAILO_API_URL=http://hailo-runtime:8000
+      - SERVICE_PORT=8080
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TZ=${TZ:-Asia/Shanghai}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      hailo-runtime:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+      replicas: 2  # 支持水平扩展
+
+  # Prometheus监控 (生产配置)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: hailo-prometheus
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  # Grafana可视化 (生产配置)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hailo-grafana
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/plugins:/var/lib/grafana/plugins
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_SERVER_DOMAIN=${DOMAIN:-hailo.local}
+      - GF_SERVER_ROOT_URL=https://${DOMAIN:-hailo.local}/grafana/
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+  # 日志收集 - Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: hailo-elasticsearch
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+      - ./monitoring/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+    environment:
+      - node.name=hailo-es-node
+      - cluster.name=hailo-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - xpack.security.enabled=false
+      - xpack.monitoring.collection.enabled=true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  # 日志收集 - Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: hailo-logstash
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    volumes:
+      - hailo_logs:/app/logs:ro
+      - ./logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logging/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+    environment:
+      - "LS_JAVA_OPTS=-Xmx512m -Xms512m"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9600 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+  # 日志可视化 - Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: hailo-kibana
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    ports:
+      - "5601:5601"
+    volumes:
+      - ./monitoring/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - SERVER_NAME=${DOMAIN:-hailo.local}
+      - SERVER_HOST=0.0.0.0
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+  # 自动更新监控
+  watchtower:
+    image: containrrr/watchtower
+    container_name: hailo-watchtower
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=3600  # 1小时检查一次
+      - WATCHTOWER_TIMEOUT=10m
+      - WATCHTOWER_LABEL_ENABLE=true
+      - TZ=${TZ:-Asia/Shanghai}
+    command: --label-enable --cleanup --interval 3600
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 128M
+
+  # 数据库备份服务
+  db-backup:
+    image: alpine:latest
+    container_name: hailo-db-backup
+    restart: unless-stopped
+    networks:
+      - hailo-network
+    volumes:
+      - redis_data:/backup/redis:ro
+      - grafana_data:/backup/grafana:ro
+      - prometheus_data:/backup/prometheus:ro
+      - ./backups:/backup/archives
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}  # 每天凌晨2点
+    command: >
+      sh -c "
+        apk add --no-cache tar gzip cron &&
+        echo '$${BACKUP_SCHEDULE} cd /backup && tar -czf archives/backup-$(date +\%Y\%m\%d-\%H\%M\%S).tar.gz .' > /etc/crontabs/root &&
+        crond -f -l 2
+      "
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 256M
+
+# 网络配置
+networks:
+  hailo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+    labels:
+      - "com.docker.compose.project=hailo8"
+
+# 数据卷配置 (持久化存储)
+volumes:
+  # Redis数据
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/redis
+
+  # Prometheus数据
+  prometheus_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/prometheus
+
+  # Grafana数据
+  grafana_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/grafana
+
+  # Elasticsearch数据
+  elasticsearch_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/elasticsearch
+
+  # Hailo应用数据
+  hailo_models:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/models
+
+  hailo_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/logs
+
+  hailo_temp:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/temp
+
+  hailo_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/app
+
+  hailo_uploads:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/uploads
+
+  hailo_outputs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/outputs
+
+  # Nginx数据
+  nginx_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/nginx/logs
+
+  nginx_cache:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/opt/hailo8/data}/nginx/cache
