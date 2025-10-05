@@ -243,6 +243,90 @@ temp/
 ehthumbs.db
 Thumbs.db
 
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon must end with two \r
+Icon
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+
+# Dump file
+*.stackdump
+
+# Folder config file
+[Dd]esktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+# Linux
+*~
+
+# temporary files which can be created if a process still has a handle open of a deleted file
+.fuse_hidden*
+
+# KDE directory preferences
+.directory
+
+# Linux trash folder which might appear on any partition or disk
+.Trash-*
+
+# .nfs files are created when an open file is removed but is still being accessed
+.nfs*
+
+# Project specific
+*.log
+logs/
+temp/
+tmp/
+cache/
+data/
+backup/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
 # Docker
 .dockerignore
 
@@ -272,48 +356,6 @@ test_data/
 *.test
 tests/data/
 
-# IDE specific files
-.vscode/settings.json
-.vscode/launch.json
-.vscode/extensions.json
-.idea/
-*.swp
-*.swo
-
-# Backup files
-*.bak
-*.backup
-*.old
-
-# Hailo specific
-*.ko
-*.o
-*.mod
-.hailo_cache/
-
-# Container specific
-docker-compose.override.yml
-.env.local
-.env.production
-
-# Compiled files
-*.pyc
-*.pyo
-*.pyd
-*.so
-
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-
-# Cache directories
-.cache/
-.mypy_cache/
-.pytest_cache/
-.coverage
-htmlcov/
-
 # Security files
 *.pem
 *.key
@@ -328,3 +370,45 @@ keystore/
 *.tar.gz
 *.zip
 *.rar
+
+# Hailo specific
+*.ko
+*.o
+*.mod
+.hailo_cache/
+
+# Container specific
+docker-compose.override.yml
+.env.local
+.env.production
+
+# Hailo specific
+*.hef
+models/
+hailo_runtime/
+
+# Configuration files with sensitive data
+config.yaml
+.env
+secrets/
+
+# Test results
+test_results/
+coverage_reports/
+
+# Monitoring data
+monitoring/data/
+prometheus_data/
+grafana_data/
+
+# Frigate wizard temporary files
+frigate_wizard/temp/
+frigate_wizard/data/
+frigate_wizard/logs/
+frigate_wizard/config/generated/
+
+# Build artifacts
+*.deb
+*.whl
+*.tar.gz
+*.zip

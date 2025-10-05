@@ -1,0 +1,779 @@
+{% extends "base.html" %}
+
+{% block title %}Hailo8 TPU 管理 - Frigate Setup Wizard{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1><i class="bi bi-cpu"></i> Hailo8 TPU 管理</h1>
+                <p class="text-muted">管理和监控您的Hailo8 TPU硬件加速器</p>
+            </div>
+            <div>
+                {% if not hailo8_status.driver_installed %}
+                <button class="btn btn-primary btn-lg" onclick="showInstallModal()">
+                    <i class="bi bi-download"></i> 一键安装 Hailo8
+                </button>
+                {% else %}
+                <button class="btn btn-success" onclick="runPerformanceTest()">
+                    <i class="bi bi-speedometer2"></i> 性能测试
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 硬件状态卡片 -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-motherboard"></i> 硬件状态</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>硬件检测</span>
+                                <span class="status-indicator {{ 'status-online' if hardware_info.detected else 'status-offline' }}"></span>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>设备连接</span>
+                                <span class="status-indicator {{ 'status-online' if hardware_info.connected else 'status-offline' }}"></span>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>温度正常</span>
+                                <span class="status-indicator {{ 'status-online' if hardware_info.temperature_ok else 'status-offline' }}"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        {% if hardware_info.detected %}
+                        <div class="mb-2">
+                            <small class="text-muted">设备型号</small>
+                            <div>{{ hardware_info.model or 'Hailo-8' }}</div>
+                        </div>
+                        <div class="mb-2">
+                            <small class="text-muted">固件版本</small>
+                            <div>{{ hardware_info.firmware_version or 'N/A' }}</div>
+                        </div>
+                        <div class="mb-2">
+                            <small class="text-muted">当前温度</small>
+                            <div>{{ hardware_info.temperature or 'N/A' }}°C</div>
+                        </div>
+                        {% else %}
+                        <div class="text-muted">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            未检测到Hailo8设备
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary" onclick="refreshHardwareInfo()">
+                        <i class="bi bi-arrow-clockwise"></i> 刷新硬件信息
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> 软件状态</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>驱动安装</span>
+                                <span class="status-indicator {{ 'status-online' if software_info.driver_installed else 'status-offline' }}"></span>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>运行时可用</span>
+                                <span class="status-indicator {{ 'status-online' if software_info.runtime_available else 'status-offline' }}"></span>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>Python绑定</span>
+                                <span class="status-indicator {{ 'status-online' if software_info.python_bindings else 'status-offline' }}"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        {% if software_info.driver_installed %}
+                        <div class="mb-2">
+                            <small class="text-muted">驱动版本</small>
+                            <div>{{ software_info.driver_version or 'N/A' }}</div>
+                        </div>
+                        <div class="mb-2">
+                            <small class="text-muted">运行时版本</small>
+                            <div>{{ software_info.runtime_version or 'N/A' }}</div>
+                        </div>
+                        <div class="mb-2">
+                            <small class="text-muted">安装路径</small>
+                            <div><small>{{ software_info.install_path or '/opt/hailo' }}</small></div>
+                        </div>
+                        {% else %}
+                        <div class="text-muted">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            软件未安装
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="d-grid gap-2">
+                    {% if not software_info.driver_installed %}
+                    <button class="btn btn-primary" onclick="showInstallModal()">
+                        <i class="bi bi-download"></i> 安装软件组件
+                    </button>
+                    {% else %}
+                    <button class="btn btn-outline-warning" onclick="showUninstallModal()">
+                        <i class="bi bi-trash"></i> 卸载组件
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 性能监控 -->
+{% if hailo8_status.driver_installed %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-speedometer2"></i> 性能监控</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <div class="text-center">
+                            <div class="performance-metric">
+                                <div class="metric-value" id="throughput">{{ performance.throughput or '0' }}</div>
+                                <div class="metric-label">FPS</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="text-center">
+                            <div class="performance-metric">
+                                <div class="metric-value" id="latency">{{ performance.latency or '0' }}</div>
+                                <div class="metric-label">延迟 (ms)</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="text-center">
+                            <div class="performance-metric">
+                                <div class="metric-value" id="utilization">{{ performance.utilization or '0' }}</div>
+                                <div class="metric-label">利用率 (%)</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="text-center">
+                            <div class="performance-metric">
+                                <div class="metric-value" id="power">{{ performance.power or '0' }}</div>
+                                <div class="metric-label">功耗 (W)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <canvas id="performanceChart" width="400" height="200"></canvas>
+                    </div>
+                    <div class="col-md-6">
+                        <canvas id="utilizationChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 模型管理 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-box"></i> 模型管理</h5>
+                    <button class="btn btn-outline-primary btn-sm" onclick="refreshModels()">
+                        <i class="bi bi-arrow-clockwise"></i> 刷新
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="modelsContainer">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-hourglass-split"></i>
+                        <p>正在加载模型列表...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 日志查看 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-file-text"></i> 系统日志</h5>
+                    <div>
+                        <button class="btn btn-outline-primary btn-sm" onclick="refreshLogs()">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="clearLogs()">
+                            <i class="bi bi-trash"></i> 清空
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="log-container">
+                    <pre id="logContent" class="log-content">正在加载日志...</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 安装模态框 -->
+<div class="modal fade" id="installModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-download"></i> Hailo8 一键安装
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <i class="bi bi-cpu feature-icon"></i>
+                    <h4>安装 Hailo8 TPU 支持</h4>
+                    <p class="text-muted">这将安装Hailo8驱动、运行时和相关组件</p>
+                </div>
+                
+                <div class="mb-4">
+                    <h6>安装选项</h6>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="installDriver" checked>
+                        <label class="form-check-label" for="installDriver">
+                            安装Hailo8驱动程序
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="installRuntime" checked>
+                        <label class="form-check-label" for="installRuntime">
+                            安装Hailo运行时环境
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="installModels" checked>
+                        <label class="form-check-label" for="installModels">
+                            下载预训练模型
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="enableDocker">
+                        <label class="form-check-label" for="enableDocker">
+                            配置Docker支持
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>注意：</strong>
+                    安装过程可能需要几分钟时间，请确保网络连接稳定。
+                    安装期间请不要关闭浏览器或刷新页面。
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary btn-lg" onclick="startInstallation()">
+                        <i class="bi bi-download"></i> 开始安装
+                    </button>
+                    <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                        取消
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 安装进度模态框 -->
+<div class="modal fade" id="installProgressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-download"></i> 正在安装 Hailo8
+                </h5>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">安装中...</span>
+                    </div>
+                    <h5 class="mt-3" id="installStatus">准备安装...</h5>
+                </div>
+                
+                <div class="progress mb-3">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         id="installProgress" 
+                         style="width: 0%"></div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">安装日志</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="log-container" style="height: 300px;">
+                            <pre id="installLog" class="log-content"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" onclick="cancelInstallation()">
+                    <i class="bi bi-x-circle"></i> 取消安装
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Hailo8管理页面的JavaScript代码
+
+let installProgressInterval;
+let performanceInterval;
+
+// 显示安装模态框
+function showInstallModal() {
+    const modal = new bootstrap.Modal(document.getElementById('installModal'));
+    modal.show();
+}
+
+// 显示卸载模态框
+function showUninstallModal() {
+    if (confirm('确定要卸载Hailo8组件吗？这将移除所有相关软件。')) {
+        uninstallHailo8();
+    }
+}
+
+// 开始安装
+function startInstallation() {
+    const installOptions = {
+        install_driver: document.getElementById('installDriver').checked,
+        install_runtime: document.getElementById('installRuntime').checked,
+        install_models: document.getElementById('installModels').checked,
+        enable_docker: document.getElementById('enableDocker').checked
+    };
+    
+    // 关闭安装选项模态框
+    const installModal = bootstrap.Modal.getInstance(document.getElementById('installModal'));
+    installModal.hide();
+    
+    // 显示进度模态框
+    const progressModal = new bootstrap.Modal(document.getElementById('installProgressModal'));
+    progressModal.show();
+    
+    // 发送安装请求
+    fetch('/hailo8/api/install', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(installOptions)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('安装已开始', 'success');
+            startProgressMonitoring();
+        } else {
+            showToast('启动安装失败: ' + data.error, 'error');
+            const progressModal = bootstrap.Modal.getInstance(document.getElementById('installProgressModal'));
+            progressModal.hide();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('网络错误', 'error');
+        const progressModal = bootstrap.Modal.getInstance(document.getElementById('installProgressModal'));
+        progressModal.hide();
+    });
+}
+
+// 开始监控安装进度
+function startProgressMonitoring() {
+    installProgressInterval = setInterval(() => {
+        fetch('/hailo8/api/install/status')
+            .then(response => response.json())
+            .then(data => {
+                updateInstallProgress(data);
+                
+                if (data.status === 'completed' || data.status === 'failed') {
+                    clearInterval(installProgressInterval);
+                    
+                    setTimeout(() => {
+                        const progressModal = bootstrap.Modal.getInstance(document.getElementById('installProgressModal'));
+                        progressModal.hide();
+                        
+                        if (data.status === 'completed') {
+                            showToast('Hailo8安装完成！', 'success');
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 2000);
+                        } else {
+                            showToast('安装失败: ' + data.error, 'error');
+                        }
+                    }, 2000);
+                }
+            })
+            .catch(error => {
+                console.error('Error monitoring progress:', error);
+            });
+    }, 1000);
+}
+
+// 更新安装进度
+function updateInstallProgress(data) {
+    const statusElement = document.getElementById('installStatus');
+    const progressElement = document.getElementById('installProgress');
+    const logElement = document.getElementById('installLog');
+    
+    // 更新状态文本
+    statusElement.textContent = data.current_step || '安装中...';
+    
+    // 更新进度条
+    const progress = data.progress || 0;
+    progressElement.style.width = progress + '%';
+    progressElement.textContent = Math.round(progress) + '%';
+    
+    // 更新日志
+    if (data.log) {
+        logElement.textContent = data.log;
+        logElement.scrollTop = logElement.scrollHeight;
+    }
+}
+
+// 取消安装
+function cancelInstallation() {
+    if (confirm('确定要取消安装吗？')) {
+        fetch('/hailo8/api/install/cancel', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                clearInterval(installProgressInterval);
+                const progressModal = bootstrap.Modal.getInstance(document.getElementById('installProgressModal'));
+                progressModal.hide();
+                showToast('安装已取消', 'info');
+            }
+        })
+        .catch(error => {
+            console.error('Error canceling installation:', error);
+        });
+    }
+}
+
+// 卸载Hailo8
+function uninstallHailo8() {
+    showToast('正在卸载Hailo8...', 'info');
+    
+    fetch('/hailo8/api/uninstall', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('卸载完成', 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showToast('卸载失败: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('网络错误', 'error');
+    });
+}
+
+// 刷新硬件信息
+function refreshHardwareInfo() {
+    showToast('正在刷新硬件信息...', 'info');
+    
+    fetch('/hailo8/api/hardware')
+        .then(response => response.json())
+        .then(data => {
+            showToast('硬件信息已更新', 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('刷新失败', 'error');
+        });
+}
+
+// 运行性能测试
+function runPerformanceTest() {
+    showToast('正在运行性能测试...', 'info');
+    
+    fetch('/hailo8/api/test', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('性能测试完成', 'success');
+            updatePerformanceMetrics(data.results);
+        } else {
+            showToast('测试失败: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('网络错误', 'error');
+    });
+}
+
+// 更新性能指标
+function updatePerformanceMetrics(results) {
+    if (results) {
+        document.getElementById('throughput').textContent = results.throughput || '0';
+        document.getElementById('latency').textContent = results.latency || '0';
+        document.getElementById('utilization').textContent = results.utilization || '0';
+        document.getElementById('power').textContent = results.power || '0';
+    }
+}
+
+// 刷新模型列表
+function refreshModels() {
+    const container = document.getElementById('modelsContainer');
+    container.innerHTML = `
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-hourglass-split"></i>
+            <p>正在加载模型列表...</p>
+        </div>
+    `;
+    
+    fetch('/hailo8/api/models')
+        .then(response => response.json())
+        .then(data => {
+            displayModels(data.models || []);
+        })
+        .catch(error => {
+            console.error('Error loading models:', error);
+            container.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <p>加载模型列表失败</p>
+                </div>
+            `;
+        });
+}
+
+// 显示模型列表
+function displayModels(models) {
+    const container = document.getElementById('modelsContainer');
+    
+    if (models.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-inbox"></i>
+                <p>暂无可用模型</p>
+                <button class="btn btn-primary" onclick="downloadDefaultModels()">
+                    <i class="bi bi-download"></i> 下载默认模型
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '<div class="row">';
+    
+    models.forEach(model => {
+        html += `
+            <div class="col-md-6 mb-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="card-title">${model.name}</h6>
+                        <p class="card-text text-muted">${model.description || '无描述'}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">${model.size || 'N/A'}</small>
+                            <div>
+                                ${model.installed ? 
+                                    '<span class="badge bg-success">已安装</span>' : 
+                                    '<button class="btn btn-sm btn-outline-primary" onclick="downloadModel(\'' + model.id + '\')">下载</button>'
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// 下载模型
+function downloadModel(modelId) {
+    showToast('开始下载模型...', 'info');
+    
+    fetch('/hailo8/api/models/download', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model_id: modelId })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('模型下载已开始', 'success');
+            // 可以添加下载进度监控
+        } else {
+            showToast('下载失败: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('网络错误', 'error');
+    });
+}
+
+// 下载默认模型
+function downloadDefaultModels() {
+    showToast('开始下载默认模型...', 'info');
+    
+    fetch('/hailo8/api/models/download-defaults', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('默认模型下载已开始', 'success');
+            setTimeout(() => {
+                refreshModels();
+            }, 2000);
+        } else {
+            showToast('下载失败: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('网络错误', 'error');
+    });
+}
+
+// 刷新日志
+function refreshLogs() {
+    fetch('/hailo8/api/logs')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('logContent').textContent = data.logs || '暂无日志';
+        })
+        .catch(error => {
+            console.error('Error loading logs:', error);
+            document.getElementById('logContent').textContent = '加载日志失败';
+        });
+}
+
+// 清空日志
+function clearLogs() {
+    if (confirm('确定要清空日志吗？')) {
+        fetch('/hailo8/api/logs/clear', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('logContent').textContent = '';
+                showToast('日志已清空', 'success');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('清空失败', 'error');
+        });
+    }
+}
+
+// 页面加载完成后执行
+document.addEventListener('DOMContentLoaded', function() {
+    // 加载模型列表
+    refreshModels();
+    
+    // 加载日志
+    refreshLogs();
+    
+    // 如果Hailo8已安装，开始性能监控
+    {% if hailo8_status.driver_installed %}
+    performanceInterval = setInterval(() => {
+        fetch('/hailo8/api/performance')
+            .then(response => response.json())
+            .then(data => {
+                updatePerformanceMetrics(data);
+            })
+            .catch(error => {
+                console.error('Error loading performance data:', error);
+            });
+    }, 5000);
+    {% endif %}
+});
+
+// 页面卸载时清理定时器
+window.addEventListener('beforeunload', function() {
+    if (installProgressInterval) {
+        clearInterval(installProgressInterval);
+    }
+    if (performanceInterval) {
+        clearInterval(performanceInterval);
+    }
+});
+</script>
+{% endblock %}

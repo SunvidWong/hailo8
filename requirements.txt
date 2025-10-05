@@ -1,0 +1,27 @@
+# Hailo8 安装管理器依赖包
+# 基础依赖
+pathlib2>=2.3.0
+dataclasses>=0.6; python_version<"3.7"
+
+# 系统交互
+psutil>=5.8.0
+distro>=1.6.0
+
+# 网络和下载
+requests>=2.25.0
+urllib3>=1.26.0
+
+# 配置和数据处理
+pyyaml>=5.4.0
+toml>=0.10.0
+
+# 日志和监控
+colorlog>=6.6.0
+tqdm>=4.62.0
+
+# 可选依赖（用于增强功能）
+# Docker Python SDK（如果需要更高级的Docker集成）
+docker>=5.0.0
+
+# 系统信息获取
+py-cpuinfo>=8.0.0
