@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # 示例客户端应用
+  client-app:
+    build:
+      context: ./client_app
+      dockerfile: Dockerfile
+    image: hailo8-client:latest
+    container_name: hailo8-client-demo
+    restart: unless-stopped
+    
+    # 环境变量
+    environment:
+      - HAILO8_SERVICE_URL=http://hailo8-service:8080
+      - LOG_LEVEL=INFO
+      - CLIENT_NAME=Demo Client
+    
+    # 卷挂载
+    volumes:
+      # 输入数据目录
+      - ./data/input:/app/input:ro
+      # 输出结果目录
+      - ./data/output:/app/output
+      # 日志目录
+      - ./logs/client:/app/logs
+    
+    # 网络
+    networks:
+      - hailo8-network
+    
+    # 依赖Hailo8服务
+    depends_on:
+      - hailo8-service
+    
+    # 标签
+    labels:
+      - "com.hailo8.client=demo"
+      - "com.hailo8.version=1.0.0"
+
+  # Hailo8服务（从主配置引用）
+  hailo8-service:
+    image: hailo8-service:latest
+    container_name: hailo8-service
+    restart: unless-stopped
+    
+    ports:
+      - "8080:8080"
+    
+    environment:
+      - SERVICE_NAME=Hailo8 Hardware Acceleration Service
+      - SERVICE_VERSION=1.0.0
+      - DEBUG=false
+      - HOST=0.0.0.0
+      - PORT=8080
+      - LOG_LEVEL=INFO
+      - HAILO_MOCK_MODE=true  # 演示模式
+      - HAILO_DEVICE_COUNT=1
+      - MAX_CONCURRENT_INFERENCES=4
+      - MODEL_BASE_PATH=/app/models
+    
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs/service:/app/logs
+    
+    # 在演示环境中可能没有真实硬件
+    # devices:
+    #   - /dev/hailo0:/dev/hailo0
+    
+    networks:
+      - hailo8-network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Web界面（可选）
+  web-ui:
+    build:
+      context: ./web_ui
+      dockerfile: Dockerfile
+    image: hailo8-web-ui:latest
+    container_name: hailo8-web-ui
+    restart: unless-stopped
+    
+    ports:
+      - "3000:3000"
+    
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+      - NODE_ENV=production
+    
+    networks:
+      - hailo8-network
+    
+    depends_on:
+      - hailo8-service
+
+# 网络配置
+networks:
+  hailo8-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# 数据卷
+volumes:
+  client_data:
+    driver: local

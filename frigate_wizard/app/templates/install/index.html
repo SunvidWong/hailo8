@@ -1,0 +1,673 @@
+{% extends "base.html" %}
+
+{% block title %}安装中心 - Frigate Setup Wizard{% endblock %}
+
+{% block extra_css %}
+<style>
+.install-card {
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.install-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    border-color: var(--bs-primary);
+}
+
+.install-option {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.install-option:hover {
+    background-color: var(--bs-light);
+}
+
+.install-option.selected {
+    background-color: var(--bs-primary);
+    color: white;
+}
+
+.feature-list {
+    list-style: none;
+    padding: 0;
+}
+
+.feature-list li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.feature-list li:last-child {
+    border-bottom: none;
+}
+
+.feature-list li i {
+    color: var(--bs-success);
+    margin-right: 0.5rem;
+}
+
+.progress-container {
+    display: none;
+}
+
+.install-logs {
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- 页面标题 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h3 mb-0">🚀 安装中心</h1>
+                    <p class="text-muted mb-0">选择您需要的安装选项</p>
+                </div>
+                <div>
+                    <button class="btn btn-outline-secondary" onclick="refreshPage()">
+                        <i class="fas fa-sync-alt"></i> 刷新
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 安装选项卡片 -->
+    <div class="row g-4 mb-4">
+        <!-- Hailo8 TPU 安装 -->
+        <div class="col-lg-4 col-md-6">
+            <div class="card install-card h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-microchip"></i> Hailo8 TPU
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">安装Hailo8 TPU驱动和运行时环境，提供高性能AI推理加速。</p>
+                    
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> 自动检测硬件</li>
+                        <li><i class="fas fa-check"></i> 驱动程序安装</li>
+                        <li><i class="fas fa-check"></i> 运行时环境配置</li>
+                        <li><i class="fas fa-check"></i> 性能优化</li>
+                    </ul>
+                    
+                    <div class="mt-3">
+                        <span class="badge bg-info">硬件加速</span>
+                        <span class="badge bg-success">高性能</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-primary w-100" onclick="startHailo8Install()">
+                        <i class="fas fa-download"></i> 安装 Hailo8
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Frigate NVR 安装 -->
+        <div class="col-lg-4 col-md-6">
+            <div class="card install-card h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-video"></i> Frigate NVR
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">安装Frigate网络视频录像机，支持AI目标检测和智能监控。</p>
+                    
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> Docker容器部署</li>
+                        <li><i class="fas fa-check"></i> AI目标检测</li>
+                        <li><i class="fas fa-check"></i> 实时监控</li>
+                        <li><i class="fas fa-check"></i> 录像管理</li>
+                    </ul>
+                    
+                    <div class="mt-3">
+                        <span class="badge bg-primary">视频监控</span>
+                        <span class="badge bg-warning">AI检测</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-success w-100" onclick="startFrigateInstall()">
+                        <i class="fas fa-download"></i> 安装 Frigate
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 完整安装 -->
+        <div class="col-lg-4 col-md-6">
+            <div class="card install-card h-100 border-warning">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-star"></i> 完整安装
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">一键安装Hailo8 TPU + Frigate NVR，获得最佳的AI监控体验。</p>
+                    
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> Hailo8 TPU支持</li>
+                        <li><i class="fas fa-check"></i> Frigate NVR</li>
+                        <li><i class="fas fa-check"></i> 自动配置集成</li>
+                        <li><i class="fas fa-check"></i> 性能优化</li>
+                    </ul>
+                    
+                    <div class="mt-3">
+                        <span class="badge bg-danger">推荐</span>
+                        <span class="badge bg-info">一键安装</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-warning w-100" onclick="startFullInstall()">
+                        <i class="fas fa-magic"></i> 一键安装
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 安装进度区域 -->
+    <div class="row" id="progressContainer" style="display: none;">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-cog fa-spin"></i> 安装进度
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span id="installStatus">准备安装...</span>
+                            <span id="installProgress">0%</span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 id="progressBar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0">安装日志</h6>
+                                </div>
+                                <div class="card-body p-2">
+                                    <div id="installLogs" class="install-logs bg-dark text-light p-2 rounded">
+                                        <div class="text-muted">等待安装开始...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0">安装信息</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-2">
+                                        <strong>任务ID:</strong>
+                                        <span id="taskId" class="text-muted">-</span>
+                                    </div>
+                                    <div class="mb-2">
+                                        <strong>开始时间:</strong>
+                                        <span id="startTime" class="text-muted">-</span>
+                                    </div>
+                                    <div class="mb-2">
+                                        <strong>运行时间:</strong>
+                                        <span id="duration" class="text-muted">-</span>
+                                    </div>
+                                    <div class="mt-3">
+                                        <button class="btn btn-danger btn-sm w-100" id="cancelBtn" onclick="cancelInstall()">
+                                            <i class="fas fa-stop"></i> 取消安装
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 安装历史 -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-history"></i> 安装历史
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="installHistory">
+                        <div class="text-center text-muted">
+                            <i class="fas fa-spinner fa-spin"></i> 加载中...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 安装选项模态框 -->
+<div class="modal fade" id="installOptionsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">安装选项</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="installOptionsForm">
+                    <div class="mb-3">
+                        <label class="form-label">安装类型</label>
+                        <div id="installTypeOptions">
+                            <!-- 动态生成选项 -->
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="forceReinstall">
+                            <label class="form-check-label" for="forceReinstall">
+                                强制重新安装（如果已安装）
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="advancedOptions" style="display: none;">
+                        <label class="form-label">高级选项</label>
+                        <textarea class="form-control" id="customOptions" rows="3" 
+                                  placeholder="JSON格式的自定义选项"></textarea>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="showAdvanced" 
+                               onchange="toggleAdvancedOptions()">
+                        <label class="form-check-label" for="showAdvanced">
+                            显示高级选项
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="confirmInstall()">开始安装</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentInstallType = '';
+let currentTaskId = '';
+let installStatusInterval = null;
+
+// 页面加载完成后初始化
+$(document).ready(function() {
+    loadInstallHistory();
+});
+
+// 开始Hailo8安装
+function startHailo8Install() {
+    currentInstallType = 'hailo8';
+    showInstallOptions('Hailo8 TPU', [
+        {value: 'standard', label: '标准安装', description: '安装基本的Hailo8驱动和运行时'},
+        {value: 'development', label: '开发版安装', description: '包含开发工具和示例代码'},
+        {value: 'minimal', label: '最小安装', description: '仅安装必要的运行时组件'}
+    ]);
+}
+
+// 开始Frigate安装
+function startFrigateInstall() {
+    currentInstallType = 'frigate';
+    showInstallOptions('Frigate NVR', [
+        {value: 'standard', label: '标准安装', description: '基本的Frigate NVR功能'},
+        {value: 'hailo8', label: 'Hailo8增强版', description: '集成Hailo8 TPU加速'},
+        {value: 'coral', label: 'Coral增强版', description: '集成Google Coral加速'}
+    ]);
+}
+
+// 开始完整安装
+function startFullInstall() {
+    currentInstallType = 'full';
+    showInstallOptions('完整安装', [
+        {value: 'recommended', label: '推荐配置', description: 'Hailo8 + Frigate的最佳配置'},
+        {value: 'custom', label: '自定义配置', description: '自定义安装选项'}
+    ]);
+}
+
+// 显示安装选项
+function showInstallOptions(title, options) {
+    $('#installOptionsModal .modal-title').text(title + ' - 安装选项');
+    
+    let optionsHtml = '';
+    options.forEach((option, index) => {
+        optionsHtml += `
+            <div class="install-option p-3 border rounded mb-2 ${index === 0 ? 'selected' : ''}" 
+                 onclick="selectInstallOption(this, '${option.value}')">
+                <div class="d-flex align-items-center">
+                    <input type="radio" name="installType" value="${option.value}" 
+                           ${index === 0 ? 'checked' : ''} class="me-2">
+                    <div>
+                        <strong>${option.label}</strong>
+                        <div class="text-muted small">${option.description}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    $('#installTypeOptions').html(optionsHtml);
+    $('#installOptionsModal').modal('show');
+}
+
+// 选择安装选项
+function selectInstallOption(element, value) {
+    $('.install-option').removeClass('selected');
+    $(element).addClass('selected');
+    $(element).find('input[type="radio"]').prop('checked', true);
+}
+
+// 切换高级选项
+function toggleAdvancedOptions() {
+    if ($('#showAdvanced').is(':checked')) {
+        $('#advancedOptions').show();
+    } else {
+        $('#advancedOptions').hide();
+    }
+}
+
+// 确认安装
+function confirmInstall() {
+    const selectedType = $('input[name="installType"]:checked').val();
+    const forceReinstall = $('#forceReinstall').is(':checked');
+    const customOptions = $('#customOptions').val();
+    
+    let options = {
+        type: selectedType,
+        force: forceReinstall
+    };
+    
+    // 解析自定义选项
+    if (customOptions.trim()) {
+        try {
+            const custom = JSON.parse(customOptions);
+            options = {...options, ...custom};
+        } catch (e) {
+            showToast('自定义选项格式错误', 'error');
+            return;
+        }
+    }
+    
+    // 隐藏模态框
+    $('#installOptionsModal').modal('hide');
+    
+    // 开始安装
+    startInstallation(currentInstallType, options);
+}
+
+// 开始安装
+function startInstallation(type, options) {
+    showProgressContainer();
+    
+    $.ajax({
+        url: '/install/api/start',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            type: type,
+            options: options
+        }),
+        success: function(response) {
+            if (response.success) {
+                currentTaskId = response.task_id;
+                $('#taskId').text(currentTaskId);
+                $('#startTime').text(new Date().toLocaleString());
+                
+                showToast(response.message, 'success');
+                startStatusMonitoring();
+            } else {
+                showToast(response.error, 'error');
+                hideProgressContainer();
+            }
+        },
+        error: function(xhr) {
+            const error = xhr.responseJSON ? xhr.responseJSON.error : '启动安装失败';
+            showToast(error, 'error');
+            hideProgressContainer();
+        }
+    });
+}
+
+// 开始状态监控
+function startStatusMonitoring() {
+    if (installStatusInterval) {
+        clearInterval(installStatusInterval);
+    }
+    
+    installStatusInterval = setInterval(function() {
+        if (currentTaskId) {
+            updateInstallStatus();
+        }
+    }, 2000);
+}
+
+// 更新安装状态
+function updateInstallStatus() {
+    $.ajax({
+        url: `/install/api/status/${currentTaskId}`,
+        method: 'GET',
+        success: function(response) {
+            if (response.success) {
+                const data = response.data;
+                
+                // 更新进度
+                $('#installProgress').text(data.progress + '%');
+                $('#progressBar').css('width', data.progress + '%');
+                $('#installStatus').text(data.message);
+                
+                // 更新运行时间
+                if (data.current_duration) {
+                    $('#duration').text(formatDuration(data.current_duration));
+                }
+                
+                // 更新日志
+                updateInstallLogs(data.logs);
+                
+                // 检查是否完成
+                if (data.status === 'completed') {
+                    $('#progressBar').removeClass('progress-bar-animated progress-bar-striped')
+                                   .addClass('bg-success');
+                    $('#cancelBtn').hide();
+                    showToast('安装完成！', 'success');
+                    stopStatusMonitoring();
+                    loadInstallHistory();
+                } else if (data.status === 'failed') {
+                    $('#progressBar').removeClass('progress-bar-animated progress-bar-striped')
+                                   .addClass('bg-danger');
+                    $('#cancelBtn').hide();
+                    showToast('安装失败: ' + data.message, 'error');
+                    stopStatusMonitoring();
+                    loadInstallHistory();
+                } else if (data.status === 'cancelled') {
+                    $('#progressBar').removeClass('progress-bar-animated progress-bar-striped')
+                                   .addClass('bg-warning');
+                    $('#cancelBtn').hide();
+                    showToast('安装已取消', 'warning');
+                    stopStatusMonitoring();
+                    loadInstallHistory();
+                }
+            }
+        },
+        error: function() {
+            // 静默处理错误，避免频繁提示
+        }
+    });
+}
+
+// 更新安装日志
+function updateInstallLogs(logs) {
+    if (!logs || logs.length === 0) return;
+    
+    const logsContainer = $('#installLogs');
+    let logsHtml = '';
+    
+    logs.slice(-50).forEach(log => {
+        const time = new Date(log.timestamp).toLocaleTimeString();
+        const levelClass = log.level === 'error' ? 'text-danger' : 
+                          log.level === 'success' ? 'text-success' : 
+                          log.level === 'warning' ? 'text-warning' : 'text-light';
+        
+        logsHtml += `<div class="${levelClass}">[${time}] ${log.message}</div>`;
+    });
+    
+    logsContainer.html(logsHtml);
+    logsContainer.scrollTop(logsContainer[0].scrollHeight);
+}
+
+// 取消安装
+function cancelInstall() {
+    if (!currentTaskId) return;
+    
+    if (confirm('确定要取消当前安装吗？')) {
+        $.ajax({
+            url: `/install/api/cancel/${currentTaskId}`,
+            method: 'POST',
+            success: function(response) {
+                if (response.success) {
+                    showToast(response.message, 'warning');
+                } else {
+                    showToast(response.error, 'error');
+                }
+            },
+            error: function(xhr) {
+                const error = xhr.responseJSON ? xhr.responseJSON.error : '取消安装失败';
+                showToast(error, 'error');
+            }
+        });
+    }
+}
+
+// 停止状态监控
+function stopStatusMonitoring() {
+    if (installStatusInterval) {
+        clearInterval(installStatusInterval);
+        installStatusInterval = null;
+    }
+}
+
+// 显示进度容器
+function showProgressContainer() {
+    $('#progressContainer').show();
+    $('html, body').animate({
+        scrollTop: $('#progressContainer').offset().top - 100
+    }, 500);
+}
+
+// 隐藏进度容器
+function hideProgressContainer() {
+    $('#progressContainer').hide();
+    stopStatusMonitoring();
+    currentTaskId = '';
+}
+
+// 加载安装历史
+function loadInstallHistory() {
+    $.ajax({
+        url: '/install/api/history',
+        method: 'GET',
+        success: function(response) {
+            if (response.success) {
+                displayInstallHistory(response.data);
+            } else {
+                $('#installHistory').html('<div class="text-danger">加载历史失败</div>');
+            }
+        },
+        error: function() {
+            $('#installHistory').html('<div class="text-danger">加载历史失败</div>');
+        }
+    });
+}
+
+// 显示安装历史
+function displayInstallHistory(history) {
+    if (history.length === 0) {
+        $('#installHistory').html('<div class="text-muted">暂无安装历史</div>');
+        return;
+    }
+    
+    let historyHtml = '<div class="table-responsive"><table class="table table-hover">';
+    historyHtml += '<thead><tr><th>任务ID</th><th>类型</th><th>状态</th><th>开始时间</th><th>结束时间</th><th>操作</th></tr></thead><tbody>';
+    
+    history.forEach(item => {
+        const statusClass = item.status === 'completed' ? 'success' : 
+                           item.status === 'failed' ? 'danger' : 'warning';
+        const statusText = item.status === 'completed' ? '完成' : 
+                          item.status === 'failed' ? '失败' : '取消';
+        
+        historyHtml += `
+            <tr>
+                <td><code>${item.id}</code></td>
+                <td><span class="badge bg-primary">${item.type}</span></td>
+                <td><span class="badge bg-${statusClass}">${statusText}</span></td>
+                <td>${item.start_time ? new Date(item.start_time).toLocaleString() : '-'}</td>
+                <td>${item.end_time ? new Date(item.end_time).toLocaleString() : '-'}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="viewInstallLogs('${item.id}')">
+                        <i class="fas fa-eye"></i> 查看日志
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    historyHtml += '</tbody></table></div>';
+    $('#installHistory').html(historyHtml);
+}
+
+// 查看安装日志
+function viewInstallLogs(taskId) {
+    window.open(`/install/api/logs/${taskId}`, '_blank');
+}
+
+// 格式化持续时间
+function formatDuration(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    } else {
+        return `${minutes}:${secs.toString().padStart(2, '0')}`;
+    }
+}
+
+// 刷新页面
+function refreshPage() {
+    location.reload();
+}
+
+// 页面卸载时清理
+$(window).on('beforeunload', function() {
+    stopStatusMonitoring();
+});
+</script>
+{% endblock %}

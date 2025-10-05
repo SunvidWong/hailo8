@@ -1,0 +1,60 @@
+# Core Flask dependencies
+Flask>=2.0.0,<3.0.0
+Jinja2>=3.0.0
+Werkzeug>=2.0.0
+MarkupSafe>=2.0.0
+
+# HTTP requests and API handling
+requests>=2.25.0
+
+# System monitoring and hardware info
+psutil>=5.8.0
+
+# Docker integration
+docker>=5.0.0
+
+# Configuration file handling
+PyYAML>=6.0
+
+# Environment variables
+python-dotenv>=0.19.0
+
+# Logging
+colorlog>=6.0.0
+
+# File system utilities
+pathlib2>=2.3.0
+watchdog>=2.0.0
+
+# Network utilities
+netifaces>=0.11.0
+ping3>=4.0.0
+
+# Process management
+supervisor>=4.2.0
+
+# Security
+cryptography>=3.4.0
+bcrypt>=3.2.0
+
+# Data validation and serialization
+jsonschema>=4.0.0
+marshmallow>=3.18.0
+
+# Date and time utilities
+python-dateutil>=2.8.0
+pytz>=2021.1
+
+# Hardware information
+py-cpuinfo>=8.0.0
+GPUtil>=1.4.0
+
+# Development tools (optional)
+pytest>=6.0.0
+pytest-flask>=1.2.0
+black>=22.0.0
+flake8>=4.0.0
+
+# Hailo8 specific packages (to be installed separately)
+# hailort  # Will be installed via Hailo8 installer
+# hailo-platform  # Will be installed via Hailo8 installer

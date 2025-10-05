@@ -1,0 +1,609 @@
+{% extends "base.html" %}
+
+{% block title %}Frigate Setup Wizard - 首页{% endblock %}
+
+{% block content %}
+<!-- 欢迎横幅 -->
+<div class="row mb-5">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-camera-video feature-icon"></i>
+                <h1 class="display-4 mb-3">欢迎使用 Frigate Setup Wizard</h1>
+                <p class="lead mb-4">集成Hailo8 TPU支持的智能视频监控系统安装向导</p>
+                <div class="row justify-content-center">
+                    <div class="col-md-8">
+                        <p class="text-muted">
+                            这个向导将帮助您快速安装和配置Frigate NVR系统，并可选择集成Hailo8 TPU以获得更强大的AI推理性能。
+                            支持自动硬件检测、一键安装和可视化配置管理。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 系统状态概览 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h2><i class="bi bi-speedometer2"></i> 系统状态概览</h2>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <!-- 系统基础状态 -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> 系统基础</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Docker</span>
+                        <span class="status-indicator {{ 'status-online' if system_status.docker else 'status-offline' }}" data-service="docker"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Docker Compose</span>
+                        <span class="status-indicator {{ 'status-online' if system_status.docker_compose else 'status-offline' }}" data-service="docker_compose"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Python</span>
+                        <span class="status-indicator {{ 'status-online' if system_status.python else 'status-offline' }}" data-service="python"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Git</span>
+                        <span class="status-indicator {{ 'status-online' if system_status.git else 'status-offline' }}" data-service="git"></span>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="mb-2">
+                    <small class="text-muted">CPU使用率</small>
+                    <div class="progress mb-1">
+                        <div class="progress-bar" style="width: {{ system_status.cpu_usage }}%"></div>
+                    </div>
+                    <small>{{ "%.1f"|format(system_status.cpu_usage) }}%</small>
+                </div>
+                
+                <div class="mb-2">
+                    <small class="text-muted">内存使用率</small>
+                    <div class="progress mb-1">
+                        <div class="progress-bar" style="width: {{ system_status.memory_usage }}%"></div>
+                    </div>
+                    <small>{{ "%.1f"|format(system_status.memory_usage) }}%</small>
+                </div>
+                
+                <div class="mb-2">
+                    <small class="text-muted">磁盘使用率</small>
+                    <div class="progress mb-1">
+                        <div class="progress-bar" style="width: {{ system_status.disk_space }}%"></div>
+                    </div>
+                    <small>{{ "%.1f"|format(system_status.disk_space) }}%</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Frigate状态 -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-camera-video"></i> Frigate NVR</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>已安装</span>
+                        <span class="status-indicator {{ 'status-online' if frigate_status.installed else 'status-offline' }}" data-service="frigate_installed"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>运行中</span>
+                        <span class="status-indicator {{ 'status-online' if frigate_status.running else 'status-offline' }}" data-service="frigate_running"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>配置文件</span>
+                        <span class="status-indicator {{ 'status-online' if frigate_status.config_exists else 'status-offline' }}" data-service="frigate_config"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Web界面</span>
+                        <span class="status-indicator {{ 'status-online' if frigate_status.web_accessible else 'status-offline' }}" data-service="frigate_web"></span>
+                    </div>
+                </div>
+                
+                {% if frigate_status.version %}
+                <div class="alert alert-info">
+                    <small><i class="bi bi-info-circle"></i> 版本: {{ frigate_status.version }}</small>
+                </div>
+                {% endif %}
+                
+                <div class="d-grid gap-2">
+                    {% if not frigate_status.installed %}
+                    <button class="btn btn-primary" onclick="startFrigateInstallation()">
+                        <i class="bi bi-download"></i> 安装 Frigate
+                    </button>
+                    {% elif not frigate_status.running %}
+                    <button class="btn btn-success" onclick="startFrigate()">
+                        <i class="bi bi-play-circle"></i> 启动 Frigate
+                    </button>
+                    {% else %}
+                    <a href="http://localhost:5000" target="_blank" class="btn btn-info">
+                        <i class="bi bi-box-arrow-up-right"></i> 打开 Web 界面
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Hailo8状态 -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-cpu"></i> Hailo8 TPU</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>硬件检测</span>
+                        <span class="status-indicator {{ 'status-online' if hailo8_status.hardware_detected else 'status-offline' }}" data-service="hailo8_hardware"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>驱动安装</span>
+                        <span class="status-indicator {{ 'status-online' if hailo8_status.driver_installed else 'status-offline' }}" data-service="hailo8_driver"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>运行时可用</span>
+                        <span class="status-indicator {{ 'status-online' if hailo8_status.runtime_available else 'status-offline' }}" data-service="hailo8_runtime"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>模型可用</span>
+                        <span class="status-indicator {{ 'status-online' if hailo8_status.models_available else 'status-offline' }}" data-service="hailo8_models"></span>
+                    </div>
+                </div>
+                
+                {% if hailo8_status.performance_good %}
+                <div class="alert alert-success">
+                    <small><i class="bi bi-check-circle"></i> 性能状态良好</small>
+                </div>
+                {% endif %}
+                
+                <div class="d-grid gap-2">
+                    {% if not hailo8_status.hardware_detected %}
+                    <button class="btn btn-warning" onclick="detectHailo8Hardware()">
+                        <i class="bi bi-search"></i> 检测硬件
+                    </button>
+                    {% elif not hailo8_status.driver_installed %}
+                    <button class="btn btn-primary" onclick="showHailo8InstallModal()">
+                        <i class="bi bi-download"></i> 一键安装 Hailo8
+                    </button>
+                    {% else %}
+                    <a href="/hailo8" class="btn btn-info">
+                        <i class="bi bi-gear"></i> 管理 Hailo8
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 快速操作 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h2><i class="bi bi-lightning"></i> 快速操作</h2>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <div class="col-md-3 mb-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <i class="bi bi-download feature-icon"></i>
+                <h5>一键安装</h5>
+                <p class="text-muted">快速安装Frigate和Hailo8</p>
+                <button class="btn btn-primary" onclick="showQuickInstallModal()">
+                    开始安装
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <i class="bi bi-motherboard feature-icon"></i>
+                <h5>硬件检测</h5>
+                <p class="text-muted">检测可用的硬件加速</p>
+                <a href="/hardware" class="btn btn-info">
+                    检测硬件
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <i class="bi bi-gear feature-icon"></i>
+                <h5>配置管理</h5>
+                <p class="text-muted">管理Frigate配置文件</p>
+                <a href="/config" class="btn btn-success">
+                    配置系统
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <i class="bi bi-speedometer2 feature-icon"></i>
+                <h5>系统监控</h5>
+                <p class="text-muted">查看系统运行状态</p>
+                <a href="/dashboard" class="btn btn-warning">
+                    查看仪表板
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 最近活动 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> 最近活动</h5>
+            </div>
+            <div class="card-body">
+                <div id="recentActivity">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-hourglass-split"></i>
+                        <p>正在加载最近活动...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 快速安装模态框 -->
+<div class="modal fade" id="quickInstallModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-download"></i> 快速安装向导
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-camera-video feature-icon"></i>
+                                <h5>标准安装</h5>
+                                <p class="text-muted">安装Frigate NVR，使用CPU进行AI推理</p>
+                                <button class="btn btn-primary" onclick="startStandardInstall()">
+                                    选择标准安装
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-cpu feature-icon"></i>
+                                <h5>Hailo8增强</h5>
+                                <p class="text-muted">安装Frigate + Hailo8 TPU，获得更强AI性能</p>
+                                <button class="btn btn-success" onclick="startHailo8Install()">
+                                    选择Hailo8安装
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>提示：</strong>
+                    如果您有Hailo8 TPU硬件，建议选择Hailo8增强安装以获得最佳性能。
+                    安装过程将自动检测您的硬件配置。
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hailo8安装模态框 -->
+<div class="modal fade" id="hailo8InstallModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-cpu"></i> Hailo8 TPU 一键安装
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <i class="bi bi-cpu feature-icon"></i>
+                    <h4>准备安装 Hailo8 TPU</h4>
+                    <p class="text-muted">这将安装Hailo8驱动、运行时和相关组件</p>
+                </div>
+                
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>注意：</strong>
+                    安装过程可能需要几分钟时间，请确保网络连接稳定。
+                    安装期间请不要关闭浏览器或刷新页面。
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary btn-lg" onclick="startHailo8Installation()">
+                        <i class="bi bi-download"></i> 开始安装 Hailo8
+                    </button>
+                    <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                        取消
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 页面特定的JavaScript代码
+
+// 显示快速安装模态框
+function showQuickInstallModal() {
+    const modal = new bootstrap.Modal(document.getElementById('quickInstallModal'));
+    modal.show();
+}
+
+// 显示Hailo8安装模态框
+function showHailo8InstallModal() {
+    const modal = new bootstrap.Modal(document.getElementById('hailo8InstallModal'));
+    modal.show();
+}
+
+// 开始标准安装
+function startStandardInstall() {
+    showToast('开始标准安装...', 'info');
+    
+    // 关闭模态框
+    const modal = bootstrap.Modal.getInstance(document.getElementById('quickInstallModal'));
+    modal.hide();
+    
+    // 跳转到安装页面
+    window.location.href = '/install/frigate';
+}
+
+// 开始Hailo8安装
+function startHailo8Install() {
+    showToast('开始Hailo8增强安装...', 'info');
+    
+    // 关闭模态框
+    const modal = bootstrap.Modal.getInstance(document.getElementById('quickInstallModal'));
+    modal.hide();
+    
+    // 跳转到Hailo8安装页面
+    window.location.href = '/hailo8/install';
+}
+
+// 开始Hailo8安装
+function startHailo8Installation() {
+    showToast('正在启动Hailo8安装...', 'info');
+    
+    // 关闭模态框
+    const modal = bootstrap.Modal.getInstance(document.getElementById('hailo8InstallModal'));
+    modal.hide();
+    
+    // 发送安装请求
+    fetch('/hailo8/api/install', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            install_type: 'full',
+            enable_docker: true,
+            auto_start: true
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Hailo8安装已开始', 'success');
+            // 跳转到安装状态页面
+            window.location.href = '/hailo8/install';
+        } else {
+            showToast('启动安装失败: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('网络错误', 'error');
+    });
+}
+
+// 开始Frigate安装
+function startFrigateInstallation() {
+    showToast('开始安装Frigate...', 'info');
+    
+    fetch('/api/install/frigate', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            install_type: 'standard'
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Frigate安装已开始', 'success');
+            // 刷新页面或跳转到安装状态页面
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showToast('启动安装失败: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('网络错误', 'error');
+    });
+}
+
+// 启动Frigate
+function startFrigate() {
+    showToast('正在启动Frigate...', 'info');
+    
+    fetch('/api/frigate/start', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Frigate启动成功', 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showToast('启动失败: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('网络错误', 'error');
+    });
+}
+
+// 检测Hailo8硬件
+function detectHailo8Hardware() {
+    showToast('正在检测Hailo8硬件...', 'info');
+    
+    fetch('/hailo8/api/hardware')
+        .then(response => response.json())
+        .then(data => {
+            if (data.detected) {
+                showToast('检测到Hailo8硬件', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                showToast('未检测到Hailo8硬件', 'warning');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('检测失败', 'error');
+        });
+}
+
+// 加载最近活动
+function loadRecentActivity() {
+    fetch('/api/activity/recent')
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('recentActivity');
+            
+            if (data.activities && data.activities.length > 0) {
+                let html = '<div class="list-group list-group-flush">';
+                
+                data.activities.forEach(activity => {
+                    const icon = getActivityIcon(activity.type);
+                    const time = new Date(activity.timestamp).toLocaleString();
+                    
+                    html += `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">
+                                    <i class="bi bi-${icon}"></i> ${activity.title}
+                                </h6>
+                                <small>${time}</small>
+                            </div>
+                            <p class="mb-1">${activity.description}</p>
+                            ${activity.status ? `<small class="text-${activity.status === 'success' ? 'success' : activity.status === 'error' ? 'danger' : 'muted'}">${activity.status}</small>` : ''}
+                        </div>
+                    `;
+                });
+                
+                html += '</div>';
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox"></i>
+                        <p>暂无最近活动</p>
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading recent activity:', error);
+            document.getElementById('recentActivity').innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <p>加载活动记录失败</p>
+                </div>
+            `;
+        });
+}
+
+// 获取活动图标
+function getActivityIcon(type) {
+    const icons = {
+        'install': 'download',
+        'config': 'gear',
+        'start': 'play-circle',
+        'stop': 'stop-circle',
+        'error': 'exclamation-triangle',
+        'success': 'check-circle',
+        'info': 'info-circle'
+    };
+    return icons[type] || 'circle';
+}
+
+// 页面加载完成后执行
+document.addEventListener('DOMContentLoaded', function() {
+    // 加载最近活动
+    loadRecentActivity();
+    
+    // 定期刷新状态
+    setInterval(() => {
+        checkSystemStatus();
+    }, window.wizardConfig.refreshInterval);
+});
+</script>
+{% endblock %}
