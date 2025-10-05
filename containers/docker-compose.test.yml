@@ -1,0 +1,139 @@
+# 测试环境Docker Compose配置
+# 用于CI/CD和自动化测试
+
+version: '3.8'
+
+services:
+  # Hailo8 运行时容器 (测试模式)
+  hailo-runtime-test:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+    container_name: hailo-runtime-test
+    privileged: true
+    networks:
+      - hailo-test-network
+    ports:
+      - "18000:8000"    # HTTP API (测试端口)
+      - "15051:50051"  # gRPC服务 (测试端口)
+    volumes:
+      # 模拟设备 (测试环境)
+      - ./test/mock-devices:/dev/hailo0
+      # 测试模型
+      - ./test/models:/app/models:ro
+      # 测试日志
+      - ./test/logs:/app/logs
+    environment:
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - HAILO_GRPC_PORT=50051
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+      - HAILO_SIMULATION_MODE=true  # 启用模拟模式
+    command: >
+      bash -c "
+        cd /app &&
+        python -m pytest tests/ -v --cov=api --cov-report=html
+      "
+
+  # 测试数据库
+  test-db:
+    image: postgres:15-alpine
+    container_name: hailo-test-db
+    networks:
+      - hailo-test-network
+    ports:
+      - "15432:5432"
+    environment:
+      - POSTGRES_DB=hailo_test
+      - POSTGRES_USER=test_user
+      - POSTGRES_PASSWORD=test_password
+    volumes:
+      - test_db_data:/var/lib/postgresql/data
+
+  # Redis测试实例
+  test-redis:
+    image: redis:7-alpine
+    container_name: hailo-test-redis
+    networks:
+      - hailo-test-network
+    ports:
+      - "16379:6379"
+    command: redis-server --appendonly yes
+
+  # 集成测试服务
+  integration-tests:
+    build:
+      context: ./tests
+      dockerfile: Dockerfile
+    container_name: hailo-integration-tests
+    networks:
+      - hailo-test-network
+    environment:
+      - API_BASE_URL=http://hailo-runtime-test:8000
+      - REDIS_URL=redis://test-redis:6379
+      - DATABASE_URL=postgresql://test_user:test_password@test-db:5432/hailo_test
+    volumes:
+      - ./test:/app/test
+      - ./test/reports:/app/reports
+    command: >
+      bash -c "
+        wait-for-it hailo-runtime-test:8000 -t 60 &&
+        python -m pytest integration/ -v --junitxml=reports/integration.xml
+      "
+    depends_on:
+      - hailo-runtime-test
+      - test-db
+      - test-redis
+
+  # 性能测试
+  performance-tests:
+    build:
+      context: ./tests/performance
+      dockerfile: Dockerfile
+    container_name: hailo-performance-tests
+    networks:
+      - hailo-test-network
+    environment:
+      - TARGET_URL=http://hailo-runtime-test:8000
+      - CONCURRENT_USERS=10
+      - TEST_DURATION=60
+    volumes:
+      - ./test/performance:/app/test
+      - ./test/reports:/app/reports
+    command: >
+      bash -c "
+        wait-for-it hailo-runtime-test:8000 -t 60 &&
+        python load_test.py --output reports/performance.json
+      "
+    depends_on:
+      - hailo-runtime-test
+
+  # 安全测试
+  security-tests:
+    build:
+      context: ./tests/security
+      dockerfile: Dockerfile
+    container_name: hailo-security-tests
+    networks:
+      - hailo-test-network
+    environment:
+      - TARGET_URL=http://hailo-runtime-test:8000
+    volumes:
+      - ./test/security:/app/test
+      - ./test/reports:/app/reports
+    command: >
+      bash -c "
+        wait-for-it hailo-runtime-test:8000 -t 60 &&
+        python security_scan.py --output reports/security.json
+      "
+    depends_on:
+      - hailo-runtime-test
+
+networks:
+  hailo-test-network:
+    driver: bridge
+
+volumes:
+  test_db_data:
+    driver: local

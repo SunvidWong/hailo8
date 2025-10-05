@@ -1,0 +1,237 @@
+version: '3.8'
+
+services:
+  # Hailo8 运行时容器 (核心服务)
+  hailo-runtime:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+    container_name: hailo-runtime
+    privileged: true  # 需要特权模式来加载内核模块
+    networks:
+      - hailo-network
+    ports:
+      - "8000:8000"    # HTTP API
+      - "50051:50051"  # gRPC服务
+      - "9090:9090"    # Prometheus指标
+    volumes:
+      # 设备访问
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      # 内核模块 (如果需要)
+      - /lib/modules:/lib/modules:ro
+      # 模型文件存储
+      - ./models:/app/models:ro
+      # 日志文件
+      - ./logs:/app/logs
+      # 临时文件
+      - ./temp:/app/temp
+    environment:
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - HAILO_GRPC_PORT=50051
+      - LOG_LEVEL=INFO
+      - DEBUG=false
+    devices:
+      # PCIe设备访问
+      - /dev/dri:/dev/dri
+      - /dev/vfio:/dev/vfio
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/scripts/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - redis
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hailo-runtime.rule=Host(`hailo-api.localhost`)"
+      - "traefik.http.services.hailo-runtime.loadbalancer.server.port=8000"
+
+  # Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: hailo-redis
+    networks:
+      - hailo-network
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Nginx反向代理
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: hailo-nginx
+    networks:
+      - hailo-network
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - hailo-runtime
+      - hailo-web-app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Web应用示例
+  hailo-web-app:
+    build:
+      context: ./hailo-web-app
+      dockerfile: Dockerfile
+    container_name: hailo-web-app
+    networks:
+      - hailo-network
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://hailo-runtime:8000
+      - REACT_APP_WS_URL=ws://hailo-runtime:8000
+    depends_on:
+      - hailo-runtime
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AI服务示例
+  hailo-ai-service:
+    build:
+      context: ./hailo-ai-service
+      dockerfile: Dockerfile
+    container_name: hailo-ai-service
+    networks:
+      - hailo-network
+    ports:
+      - "8080:8080"
+    environment:
+      - HAILO_API_URL=http://hailo-runtime:8000
+      - SERVICE_PORT=8080
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - hailo-runtime
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: hailo-prometheus
+    networks:
+      - hailo-network
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  # Grafana可视化
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hailo-grafana
+    networks:
+      - hailo-network
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # 日志收集 (ELK Stack - 可选)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: hailo-elasticsearch
+    networks:
+      - hailo-network
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    restart: unless-stopped
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: hailo-logstash
+    networks:
+      - hailo-network
+    volumes:
+      - ./logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logs:/app/logs:ro
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: hailo-kibana
+    networks:
+      - hailo-network
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+networks:
+  hailo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local

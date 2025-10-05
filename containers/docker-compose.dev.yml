@@ -1,0 +1,129 @@
+# 开发环境Docker Compose配置
+# 简化版本，用于开发和测试
+
+version: '3.8'
+
+services:
+  # Hailo8 运行时容器 (开发模式)
+  hailo-runtime:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+    container_name: hailo-runtime-dev
+    privileged: true
+    networks:
+      - hailo-dev-network
+    ports:
+      - "8000:8000"    # HTTP API
+      - "50051:50051"  # gRPC服务
+    volumes:
+      # 开发时挂载源码，支持热重载
+      - ./hailo-runtime/api:/app/api
+      - ./hailo-runtime/scripts:/app/scripts
+      # 设备访问
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      # 内核模块
+      - /lib/modules:/lib/modules:ro
+      # 模型文件
+      - ./models:/app/models
+      # 日志
+      - ./logs:/app/logs
+      # 驱动源码 (用于调试)
+      - ../hailort-drivers-master:/app/hailort-drivers-master
+    environment:
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - HAILO_GRPC_PORT=50051
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    devices:
+      - /dev/dri:/dev/dri
+    working_dir: /app
+    # 开发模式命令
+    command: >
+      bash -c "
+        cd /app &&
+        /opt/hailo_venv/bin/python -m uvicorn api.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --log-level debug
+      "
+    stdin_open: true
+    tty: true
+    depends_on:
+      - redis-dev
+
+  # Redis开发实例
+  redis-dev:
+    image: redis:7-alpine
+    container_name: hailo-redis-dev
+    networks:
+      - hailo-dev-network
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+
+  # 开发Web应用
+  hailo-web-app:
+    build:
+      context: ./hailo-web-app
+      dockerfile: Dockerfile.dev
+    container_name: hailo-web-app-dev
+    networks:
+      - hailo-dev-network
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - REACT_APP_WS_URL=ws://localhost:8000
+      - CHOKIDAR_USEPOLLING=true  # 文件监控
+    volumes:
+      - ./hailo-web-app/src:/app/src
+      - ./hailo-web-app/public:/app/public
+      - /app/node_modules
+    depends_on:
+      - hailo-runtime
+    command: npm start
+
+  # AI服务开发实例
+  hailo-ai-service:
+    build:
+      context: ./hailo-ai-service
+      dockerfile: Dockerfile.dev
+    container_name: hailo-ai-service-dev
+    networks:
+      - hailo-dev-network
+    ports:
+      - "8080:8080"
+    environment:
+      - HAILO_API_URL=http://hailo-runtime:8000
+      - SERVICE_PORT=8080
+      - LOG_LEVEL=DEBUG
+      - FLASK_ENV=development
+    volumes:
+      - ./hailo-ai-service:/app
+      - ./data:/app/data
+    working_dir: /app
+    command: python app.py
+    depends_on:
+      - hailo-runtime
+
+  # 开发工具容器
+  dev-tools:
+    image: ubuntu:22.04
+    container_name: hailo-dev-tools
+    networks:
+      - hailo-dev-network
+    volumes:
+      - .:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker in Docker
+    working_dir: /workspace
+    command: sleep infinity
+    environment:
+      - TERM=xterm-256color
+
+networks:
+  hailo-dev-network:
+    driver: bridge
