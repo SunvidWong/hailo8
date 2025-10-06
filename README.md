@@ -1,287 +1,424 @@
-# Hailo8 TPU 智能安装管理器 & 容器化服务
+# Hailo8 + NVIDIA AI加速服务
 
-🚀 **完整的Hailo8 TPU解决方案 - 包含智能安装管理和容器化AI推理服务**
+🚀 **双硬件AI推理加速解决方案 - Docker Compose容器化部署**
 
 ## 📖 项目概述
 
-本项目提供了一套完整的Hailo8 TPU解决方案，包含：
+本项目提供了一套完整的Hailo8 PCIe + NVIDIA GPU双硬件AI推理加速解决方案，通过Docker Compose容器化部署，为其他容器提供统一的AI推理API服务。
 
-1. **智能安装管理器** - 具有完整容错、纠错和回滚能力的安装管理软件
-2. **容器化AI推理服务** - 将Hailo8硬件能力封装为标准化API服务
+![架构图](https://maas-log-prod.cn-wlcb.ufileos.com/anthropic/37cb952e-bf22-45fb-ab90-1bf74ce56b5c/19bca8642cc000fb1b8dec3a39b7f842.jpg?UCloudPublicKey=TOKEN_e15ba47a-d098-4fbd-9afc-a0dcf0e4e621&Expires=1759715004&Signature=sJPoOSljpc0B+A04yf9aqWNhXug=)
 
-## ✨ 主要特性
+## 🎯 部署方案
 
-### 🔧 智能安装管理器
-- **智能容错**: 自动检测和处理安装过程中的各种错误
-- **自动纠错**: 内置多种修复策略，自动解决常见问题
-- **完整回滚**: 支持完整的安装回滚，确保系统安全
-- **状态管理**: 实时保存安装状态，支持断点续装
-- **Docker 集成**: 自动配置 Docker 以支持 Hailo8 设备访问
-- **多平台支持**: 支持 Ubuntu、Debian、CentOS、RHEL、Fedora
+### 方案一：容器化AI推理服务（推荐）⭐
 
-### 🐳 容器化AI推理服务
-- **微服务架构**: 支持水平扩展和负载均衡
-- **标准化API**: RESTful API (FastAPI) + gRPC 双协议支持
-- **Web界面**: React前端应用 + Python AI服务示例
-- **监控体系**: Prometheus + Grafana 完整监控
-- **日志收集**: ELK栈日志收集和分析
-- **生产就绪**: 健康检查、自动恢复、负载均衡
+**使用Docker Compose部署容器，为其他容器提供AI推理加速API**
 
-## 🚀 快速开始
+#### 📋 前置要求
 
-### 方案一：容器化AI推理服务（推荐）
+**硬件要求：**
+- **Hailo8 PCIe加速卡** (可选)
+- **NVIDIA GPU** (可选)
+- **至少一种硬件可用**
 
-#### 前置要求
-- Hailo8 PCIe加速卡已安装
-- Docker Engine 20.10+
-- Linux系统，内核版本4.15+
+**系统要求：**
+- **Linux系统** (Ubuntu 20.04+, CentOS 8+, RHEL 8+)
+- **内核版本**: 4.15+
+- **Docker Engine**: 20.10+
+- **NVIDIA Container Toolkit** (如果使用NVIDIA GPU)
 
-#### 5分钟部署
+#### 🚀 5分钟快速部署
+
 ```bash
-# 克隆项目
+# 1. 克隆项目
 git clone https://github.com/SunvidWong/hailo8.git
 cd hailo8/containers
 
-# 配置设备权限
-sudo ./setup_device_permissions.sh
+# 2. 安装NVIDIA Container Toolkit (仅NVIDIA用户)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+sudo apt update && sudo apt install -y nvidia-docker2
+sudo systemctl restart docker
 
-# 启动服务
-docker-compose up -d
+# 3. 验证NVIDIA支持 (仅NVIDIA用户)
+docker run --rm --gpus all nvidia/cuda:12.1.0-base nvidia-smi
 
-# 验证部署
+# 4. 启动AI加速服务
+docker-compose -f docker-compose.official.yml up -d
+
+# 5. 验证部署
 curl http://localhost:8000/health
+curl http://localhost:8000/ai/hardware
 ```
 
-#### 服务访问
-- 🌐 Web界面: http://localhost:3000
-- 📡 API文档: http://localhost:8000/docs
-- 📊 监控面板: http://localhost:3001
+#### 📱 服务访问
 
-### 方案二：智能安装管理器
+| 服务 | 地址 | 用途 |
+|------|------|------|
+| **AI推理API** | http://localhost:8000 | 主要API服务 |
+| **API文档** | http://localhost:8000/docs | Swagger文档 |
+| **Redis缓存** | localhost:6379 | 缓存服务 |
+
+#### 🔧 API调用示例
+
+```bash
+# 检查硬件状态
+curl http://localhost:8000/ai/hardware
+
+# 自动推理 (智能选择硬件)
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": [[[255,0,0], [255,255,255], [255,0,0]]],
+    "engine": "auto",
+    "threshold": 0.4
+  }' \
+  http://localhost:8000/ai/infer
+
+# 强制使用NVIDIA
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": [[[255,0,0]]],
+    "engine": "nvidia"
+  }' \
+  http://localhost:8000/ai/infer
+
+# 强制使用Hailo8
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": [[[255,0,0]]],
+    "engine": "hailo"
+  }' \
+  http://localhost:8000/ai/infer
+```
+
+#### 🎛️ 高级推理模式
+
+```bash
+# 并行推理 (同时使用两个硬件)
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": [[[255,0,0]]],
+    "engine": "parallel",
+    "priority": "performance"
+  }' \
+  http://localhost:8000/ai/infer
+
+# 双引擎融合 (高精度)
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": [[[255,0,0]]],
+    "engine": "both",
+    "priority": "accuracy"
+  }' \
+  http://localhost:8000/ai/inver
+
+# 负载均衡 (自动优化)
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": [[[255,0,0]]],
+    "engine": "load_balance"
+  }' \
+  http://localhost:8000/ai/infer
+```
+
+#### 🐳 其他容器调用示例
+
+```python
+# 其他容器中调用AI服务
+import requests
+
+def ai_inference(image_data, engine="auto"):
+    response = requests.post(
+        'http://hailo8-ai:8000/ai/infer',
+        json={
+            'image': image_data,
+            'engine': engine,
+            'threshold': 0.5
+        }
+    )
+
+    if response.status_code == 200:
+        result = response.json()
+        print(f"检测到 {len(result['detections'])} 个对象")
+        print(f"使用引擎: {result['engines_used']}")
+        print(f"推理时间: {result['inference_time']:.3f}s")
+        return result
+    else:
+        print(f"推理失败: {response.text}")
+        return None
+
+# 使用示例
+result = ai_inference(your_image_data)
+```
+
+#### 📊 Docker Compose配置详解
+
+```yaml
+# docker-compose.official.yml
+services:
+  hailo8-ai:
+    build:
+      context: ./hailo-runtime
+      args:
+        SUPPORT_NVIDIA: "true"
+        SUPPORT_HAILO: "true"
+
+    # NVIDIA GPU支持
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ./models:/app/models
+      - /dev/hailo0:/dev/hailo0
+      - /dev/dri:/dev/dri
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=all
+      - DEFAULT_ENGINE=auto
+```
+
+#### 🔍 验证和测试
+
+```bash
+# 运行完整测试套件
+./test_ai_acceleration.sh
+
+# 手动测试硬件检测
+curl http://localhost:8000/ai/hardware | jq
+
+# 测试各引擎性能
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"image":[[[255,0,0]]],"engine":"auto"}' \
+  http://localhost:8000/ai/infer
+```
+
+---
+
+### 方案二：Hailo8 PCIe卡驱动安装
+
+**直接在宿主机安装Hailo8驱动，适用于非容器化部署**
 
 #### 系统要求
-- Linux (Ubuntu 18.04+, Debian 9+, CentOS 7+, RHEL 7+, Fedora 30+)
+- Linux (Ubuntu 18.04+, Debian 9+, CentOS 7+, RHEL 7+)
 - 内核版本 4.0+
 - root权限
 - 至少 2GB 可用空间
 
 #### 安装步骤
 ```bash
-# 准备环境
+# 1. 准备环境
 sudo su
-pip3 install -r requirements.txt
-chmod +x hailo8_installer.py
+cd hailo8/installer
 
-# 执行安装
+# 2. 执行安装
 python3 hailo8_installer.py
 
-# 查看状态
-python3 hailo8_installer.py --status
+# 3. 验证安装
+ls -la /dev/hailo*
+```
+
+---
+
+### 方案三：NVIDIA Docker环境
+
+**配置NVIDIA Container Toolkit，为容器提供GPU支持**
+
+#### 安装配置
+```bash
+# 安装NVIDIA Container Toolkit
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add
+sudo apt install -y nvidia-docker2
+sudo systemctl restart docker
+
+# 验证GPU容器支持
+docker run --rm --gpus all nvidia/cuda:12.1.0-base nvidia-smi
 ```
 
 ## 📁 项目结构
 
 ```
 hailo8/
-├── 📦 容器化服务
-│   └── containers/
-│       ├── 📋 README.md           # 容器化服务文档
-│       ├── 📋 QUICK_START.md      # 5分钟快速开始
-│       ├── 📋 ARCHITECTURE.md     # 架构设计文档
-│       ├── 🐳 docker-compose.yml  # 生产环境编排
-│       ├── 🐳 docker-compose.dev.yml # 开发环境
-│       ├── ⚙️ setup_device_permissions.sh # 设备权限配置
-│       ├── 🧪 test_services.sh    # 功能测试脚本
-│       └── 📁 服务组件
-│           ├── hailo-runtime/     # 核心运行时容器
-│           ├── hailo-web-app/     # React前端应用
-│           ├── hailo-ai-service/  # Python AI服务
-│           └── nginx/             # 反向代理配置
-├── 🔧 安装工具
-│   ├── 🐧 docker_compile.sh       # Docker编译脚本
-│   ├── 🐧 compile_hailo8_driver.sh # Linux编译脚本
-│   ├── 📦 install_hailo8_onekey.sh # 一键安装脚本
-│   └── 📚 文档和指南
-│       ├── README.md              # 项目主文档
-│       ├── INSTALL_GUIDE.md       # 安装指南
-│       ├── PYTHON_ENV_GUIDE.md    # Python环境指南
-│       └── MACOS_SOLUTION.md      # macOS解决方案
-├── 📦 官方驱动源码
-│   └── hailort-drivers-master/    # Hailo官方驱动源码
-└── ⚙️ 配置文件
-    ├── .gitignore                 # Git忽略文件
-    └── .env.example              # 环境变量模板
+├── 📦 containers/                    # 方案一：容器化服务
+│   ├── docker-compose.official.yml  # Docker官方规范配置
+│   ├── docker-compose.nvidia-fixed.yml # NVIDIA修正版
+│   ├── README_STANDARD.md           # 标准配置说明
+│   ├── NVIDIA_CONTAINER_SETUP.md    # NVIDIA容器配置指南
+│   ├── DOCKER_COMPOSE_SPEC.md       # Docker规范说明
+│   ├── AI_ACCELERATION_GUIDE.md     # 完整使用指南
+│   ├── ENGINE_SELECTION_GUIDE.md     # 引擎选择指南
+│   ├── ZERO_CONFIG_GUIDE.md         # 零配置部署指南
+│   ├── test_ai_acceleration.sh      # 完整测试脚本
+│   └── 📁 hailo-runtime/            # AI服务源码
+│       ├── Dockerfile              # 容器镜像构建
+│       ├── api/                    # API服务代码
+│       │   ├── enhanced_ai_acceleration_adapter.py
+│       │   ├── frigate_auto_discovery.py
+│       │   └── main.py
+│       └── scripts/                # 部署脚本
+├── 🔧 installer/                    # 方案二：驱动安装
+│   ├── hailo8_installer.py         # 智能安装管理器
+│   ├── install_hailo8_onekey.sh    # 一键安装脚本
+│   └── README_INSTALLER.md         # 安装器说明
+└── 📚 docs/                        # 文档目录
+    ├── INSTALL_GUIDE.md             # 安装指南
+    ├── TROUBLESHOOTING.md          # 故障排除
+    └── API_REFERENCE.md            # API参考
 ```
 
-## 🔧 使用指南
+## 🔧 配置说明
 
-### 容器化服务使用
+### 环境变量配置
 
-#### API调用示例
-```bash
-# 健康检查
-curl http://localhost:8000/health
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `SUPPORT_HAILO` | `true` | 启用Hailo8支持 |
+| `SUPPORT_NVIDIA` | `true` | 启用NVIDIA支持 |
+| `DEFAULT_ENGINE` | `auto` | 默认推理引擎 |
+| `LOG_LEVEL` | `INFO` | 日志级别 |
 
-# 图像推理
-curl -X POST \
-  http://localhost:8000/api/v1/inference/image \
-  -F "file=@image.jpg" \
-  -F "confidence_threshold=0.5"
+### 推理引擎选择
 
-# 设备状态
-curl http://localhost:8000/api/v1/device/status
-```
-
-#### Python客户端
-```python
-import requests
-
-# 客户端类
-class HailoClient:
-    def __init__(self, base_url="http://localhost:8000"):
-        self.base_url = base_url
-
-    def inference(self, image_path, confidence=0.5):
-        with open(image_path, 'rb') as f:
-            files = {'file': f}
-            data = {'confidence_threshold': confidence}
-            response = requests.post(
-                f"{self.base_url}/api/v1/inference/image",
-                files=files,
-                data=data
-            )
-        return response.json()
-
-# 使用示例
-client = HailoClient()
-result = client.inference("test.jpg")
-print(result)
-```
-
-### 安装管理器使用
-
-#### 基本命令
-```bash
-# 完整安装
-python3 hailo8_installer.py
-
-# 查看安装状态
-python3 hailo8_installer.py --status
-
-# 回滚安装
-python3 hailo8_installer.py --rollback
-
-# 修复安装
-python3 hailo8_installer.py --repair
-```
-
-#### Docker集成使用
-```bash
-# 运行测试容器
-docker run --rm --device=/dev/hailo0 hailo8:latest
-
-# 在容器中使用Hailo8
-docker run -it --device=/dev/hailo0 hailo8:latest python3 -c "
-import hailo_platform
-print('Hailo8 在 Docker 中运行正常')
-"
-```
+| 引擎 | 适用场景 | 优势 |
+|------|----------|------|
+| `auto` | 通用场景 | 自动选择最佳硬件 |
+| `hailo` | 边缘推理 | 低功耗、低延迟 |
+| `nvidia` | 高精度推理 | 高算力、复杂模型 |
+| `both` | 高精度需求 | 双引擎融合 |
+| `parallel` | 高吞吐量 | 并行处理 |
+| `load_balance` | 生产环境 | 负载均衡 |
 
 ## 📊 监控和运维
 
-### 服务监控
-- **Grafana仪表板**: http://localhost:3001 (admin/admin123)
-- **Prometheus指标**: http://localhost:9091
-- **服务日志**: `docker-compose logs -f`
-
-### 健康检查
+### 服务状态检查
 ```bash
-# 运行完整测试
-./test_services.sh
+# 检查容器状态
+docker-compose -f docker-compose.official.yml ps
 
-# 快速测试
-./test_services.sh --quick
+# 查看实时日志
+docker-compose -f docker-compose.official.yml logs -f hailo8-ai
 
-# API测试
-curl http://localhost:8000/health
+# 检查硬件状态
+curl http://localhost:8000/ai/hardware
+```
+
+### 性能监控
+```bash
+# 查看GPU使用情况 (NVIDIA)
+nvidia-smi
+
+# 查看服务资源使用
+docker stats hailo8-ai
+
+# API性能测试
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"image":[[[255,0,0]]],"engine":"auto"}' \
+  http://localhost:8000/ai/infer
 ```
 
 ## 🔍 故障排除
 
-### 容器化服务问题
-```bash
-# 检查容器状态
-docker-compose ps
-
-# 查看详细日志
-docker-compose logs hailo-runtime
-
-# 重新构建容器
-docker-compose build --no-cache
-
-# 设备权限问题
-sudo ./setup_device_permissions.sh
-```
-
-### 安装管理器问题
-```bash
-# 查看安装日志
-tail -f /opt/hailo8/logs/hailo8_install_*.log
-
-# 检查系统状态
-python3 hailo8_installer.py --status
-
-# 修复安装
-python3 hailo8_installer.py --repair
-
-# 完全回滚
-python3 hailo8_installer.py --rollback
-```
-
 ### 常见问题
-1. **权限不足**: 使用sudo运行安装脚本
-2. **包依赖问题**: 运行 `apt --fix-broken install -y`
-3. **驱动加载失败**: 检查 `dmesg | grep hailo`
-4. **设备节点不存在**: 检查 `ls -la /dev/hailo*`
 
-## 🏗️ 架构设计
+#### 1. NVIDIA容器问题
+```bash
+# 检查NVIDIA驱动
+nvidia-smi
 
-### 容器化架构
-```
-┌─────────────────────────────────────────┐
-│           Hailo8 PCIe 硬件              │
-└─────────────────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────┐
-│         Hailo8 Runtime Container        │
-│  ┌─────────────┐  ┌─────────────────┐   │
-│  │   驱动模块   │  │   HTTP/gRPC API │   │
-│  │ hailo1x_pci │  │   (FastAPI)     │   │
-│  └─────────────┘  └─────────────────┘   │
-└─────────────────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────┐
-│         Application Containers          │
-│  ┌─────────────┐  ┌─────────────────┐   │
-│  │   Web App   │  │   AI Services   │   │
-│  │   (React)   │  │   (Python)      │   │
-│  └─────────────┘  └─────────────────┘   │
-└─────────────────────────────────────────┘
+# 验证容器支持
+docker run --rm --gpus all nvidia/cuda:12.1.0-base nvidia-smi
+
+# 重新安装NVIDIA Container Toolkit
+sudo apt purge nvidia-docker2
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add
+sudo apt install -y nvidia-docker2
+sudo systemctl restart docker
 ```
 
-### 安装管理器架构
+#### 2. Hailo8设备问题
+```bash
+# 检查PCIe设备
+lspci | grep hailo
+
+# 检查设备节点
+ls -la /dev/hailo*
+
+# 检查驱动加载
+lsmod | grep hailo
+
+# 查看内核日志
+dmesg | grep hailo
 ```
-┌─────────────────────────────────────────┐
-│         智能安装管理器                   │
-│  ┌─────────────┐  ┌─────────────────┐   │
-│  │  容错引擎   │  │   状态管理器     │   │
-│  └─────────────┘  └─────────────────┘   │
-│  ┌─────────────┐  ┌─────────────────┐   │
-│  │  自动修复   │  │   回滚管理器     │   │
-│  └─────────────┘  └─────────────────┘   │
-└─────────────────────────────────────────┘
+
+#### 3. 容器启动问题
+```bash
+# 查看详细错误日志
+docker-compose -f docker-compose.official.yml logs hailo8-ai
+
+# 重新构建镜像
+docker-compose -f docker-compose.official.yml build --no-cache
+
+# 检查权限问题
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+## 🎯 使用场景
+
+### 1. 智能摄像头系统
+```python
+# 摄像头容器调用AI服务
+def process_camera_frame(frame_data):
+    result = requests.post(
+        'http://hailo8-ai:8000/ai/infer',
+        json={
+            'image': frame_data,
+            'engine': 'auto',
+            'threshold': 0.5
+        }
+    )
+    return result.json()
+```
+
+### 2. 实时视频分析
+```python
+# 视频流处理容器
+import cv2
+import requests
+
+cap = cv2.VideoCapture(0)
+while True:
+    ret, frame = cap.read()
+    if ret:
+        # 发送帧到AI服务
+        result = ai_inference(frame.tolist())
+        # 处理检测结果...
+```
+
+### 3. 批量图像处理
+```python
+# 批量处理服务容器
+def batch_process_images(image_paths):
+    for path in image_paths:
+        with open(path, 'rb') as f:
+            image_data = f.read()
+        result = ai_inference(image_data)
+        # 保存结果...
 ```
 
 ## 🤝 贡献指南
@@ -296,30 +433,14 @@ python3 hailo8_installer.py --rollback
 
 本项目遵循 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
 
-## 🔄 更新日志
-
-### v2.0.0 - 容器化服务版本
-- ✨ 添加完整的容器化AI推理服务
-- ✨ 微服务架构，支持水平扩展
-- ✨ FastAPI + gRPC双协议支持
-- ✨ Prometheus + Grafana监控体系
-- ✨ React前端应用示例
-- ✨ 完整的测试和文档
-
-### v1.0.0 - 智能安装管理器
-- ✨ 初始版本发布
-- ✨ 支持完整的Hailo8安装流程
-- ✨ 实现容错和回滚机制
-- ✨ 添加Docker集成支持
-
 ## 📞 技术支持
 
-- 📧 邮箱: support@example.com
 - 🐛 问题反馈: [GitHub Issues](https://github.com/SunvidWong/hailo8/issues)
-- 📖 文档: [完整文档](./containers/README.md)
+- 📖 完整文档: [containers/README_STANDARD.md](containers/README_STANDARD.md)
+- 🔧 详细配置: [containers/AI_ACCELERATION_GUIDE.md](containers/AI_ACCELERATION_GUIDE.md)
 
 ---
 
-🎉 **感谢使用Hailo8 TPU解决方案！**
+🎉 **感谢使用Hailo8 + NVIDIA AI加速服务！**
 
-如果您觉得这个项目有用，请给它一个 ⭐️
+🌟 如果这个项目对您有帮助，请给它一个⭐️
