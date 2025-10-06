@@ -6,9 +6,65 @@
 
 本项目提供Hailo8 PCIe + NVIDIA GPU双硬件AI推理加速服务，通过Docker容器化部署，为其他容器提供统一的AI推理API服务。
 
-## 🚀 快速开始
+## 🎯 部署方案
 
-### 远程部署（推荐）
+### 方案一：容器化AI推理服务（推荐）⭐
+
+**使用Docker Compose部署容器，为其他容器提供AI推理加速API**
+
+#### 📋 前置要求
+
+**硬件要求：**
+- **Hailo8 PCIe加速卡** (可选)
+- **NVIDIA GPU** (可选)
+- **至少一种硬件可用**
+
+**系统要求：**
+- **Linux系统** (Ubuntu 20.04+, CentOS 8+, RHEL 8+)
+- **内核版本**: 4.15+
+- **Docker Engine**: 20.10+
+- **NVIDIA Container Toolkit** (如果使用NVIDIA GPU)
+
+#### 🚀 快速部署
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/SunvidWong/hailo8.git
+cd hailo8/containers
+
+# 2. 安装NVIDIA Container Toolkit (仅NVIDIA用户)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+sudo apt update && sudo apt install -y nvidia-docker2
+sudo systemctl restart docker
+
+# 3. 验证NVIDIA支持 (仅NVIDIA用户)
+docker run --rm --gpus all nvidia/cuda:12.1.0-base nvidia-smi
+
+# 4. 启动AI加速服务
+docker-compose -f docker-compose.official.yml up -d
+
+# 5. 验证部署
+curl http://localhost:8000/health
+curl http://localhost:8000/ai/hardware
+```
+
+#### 📱 服务访问
+
+| 服务 | 地址 | 用途 |
+|------|------|------|
+| **AI推理API** | http://localhost:8000 | 主要API服务 |
+| **API文档** | http://localhost:8000/docs | Swagger文档 |
+| **Redis缓存** | localhost:6379 | 缓存服务 |
+
+---
+
+### 方案二：远程部署（适合客户）
+
+**直接下载配置文件，无需克隆整个项目**
+
+#### 🚀 一键部署
 
 ```bash
 # 1. 准备部署目录
@@ -36,15 +92,84 @@ curl http://localhost:8000/health
 curl http://localhost:8000/ai/hardware
 ```
 
-## 📱 服务访问
+---
 
-| 服务 | 地址 | 用途 |
-|------|------|------|
-| **AI推理API** | http://localhost:8000 | 主要API服务 |
-| **API文档** | http://localhost:8000/docs | Swagger文档 |
-| **Redis缓存** | localhost:6379 | 缓存服务 |
+### 方案三：手动配置
+
+**使用现有的Docker Compose格式，手动配置容器**
+
+#### 📋 标准Docker Compose配置示例
+
+```yaml
+# docker-compose.yml
+version: '3.9'
+
+services:
+  # Hailo8 + NVIDIA 双硬件AI推理服务
+  hailo8-ai:
+    image: ghcr.io/sunvidwong/hailo8-nvidia-hailo:latest
+    container_name: hailo8-ai
+    restart: unless-stopped
+    privileged: true
+    shm_size: "256mb"
+
+    # NVIDIA GPU支持
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ./models:/app/models
+      - /dev/hailo0:/dev/hailo0
+      - /dev/dri:/dev/dri
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=all
+      - DEFAULT_ENGINE=auto
+
+  # Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: hailo8-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+
+# 数据卷定义
+volumes:
+  redis_data:
+    driver: local
+```
+
+#### 🚀 启动命令
+
+```bash
+# 保存为 docker-compose.yml 后执行
+docker-compose up -d
+
+# 验证部署
+curl http://localhost:8000/health
+```
+
+---
 
 ## 🔧 API使用示例
+
+### 基础API调用
 
 ```bash
 # 检查硬件状态
@@ -79,35 +204,7 @@ curl -X POST \
   http://localhost:8000/ai/infer
 ```
 
-## 🐳 其他容器调用示例
-
-```python
-import requests
-
-def ai_inference(image_data, engine="auto"):
-    response = requests.post(
-        'http://hailo8-ai:8000/ai/infer',
-        json={
-            'image': image_data,
-            'engine': engine,
-            'threshold': 0.5
-        }
-    )
-
-    if response.status_code == 200:
-        result = response.json()
-        print(f"检测到 {len(result['detections'])} 个对象")
-        print(f"使用引擎: {result['engines_used']}")
-        return result
-    else:
-        print(f"推理失败: {response.text}")
-        return None
-
-# 使用示例
-result = ai_inference(your_image_data)
-```
-
-## 🎛️ 高级推理模式
+### 高级推理模式
 
 ```bash
 # 并行推理 (同时使用两个硬件)
@@ -140,6 +237,34 @@ curl -X POST \
   http://localhost:8000/ai/infer
 ```
 
+## 🐳 其他容器调用示例
+
+```python
+import requests
+
+def ai_inference(image_data, engine="auto"):
+    response = requests.post(
+        'http://hailo8-ai:8000/ai/infer',
+        json={
+            'image': image_data,
+            'engine': engine,
+            'threshold': 0.5
+        }
+    )
+
+    if response.status_code == 200:
+        result = response.json()
+        print(f"检测到 {len(result['detections'])} 个对象")
+        print(f"使用引擎: {result['engines_used']}")
+        return result
+    else:
+        print(f"推理失败: {response.text}")
+        return None
+
+# 使用示例
+result = ai_inference(your_image_data)
+```
+
 ## 📊 监控服务 (可选)
 
 ```bash
@@ -156,8 +281,8 @@ docker-compose -f docker-compose.hailo8-deploy.yml --profile monitoring up -d
 ```
 hailo8/
 ├── 📦 containers/
-│   ├── docker-compose.hailo8-deploy.yml  # 远程部署配置 ⭐
-│   ├── docker-compose.official.yml       # Docker官方规范
+│   ├── docker-compose.hailo8-deploy.yml  # 远程部署配置
+│   ├── docker-compose.official.yml       # Docker官方规范 ⭐
 │   ├── docker-compose.nvidia-fixed.yml   # NVIDIA修正版
 │   ├── DEPLOY_GUIDE.md                   # 部署指南
 │   ├── AI_ACCELERATION_GUIDE.md           # 完整使用指南
@@ -193,16 +318,16 @@ hailo8/
 
 ```bash
 # 检查服务状态
-docker-compose -f docker-compose.hailo8-deploy.yml ps
+docker-compose ps
 
 # 查看日志
-docker-compose -f docker-compose.hailo8-deploy.yml logs -f hailo8-ai
+docker-compose logs -f hailo8-ai
 
 # 重启服务
-docker-compose -f docker-compose.hailo8-deploy.yml restart
+docker-compose restart
 
 # 停止服务
-docker-compose -f docker-compose.hailo8-deploy.yml down
+docker-compose down
 ```
 
 ## 🔍 故障排除
@@ -280,8 +405,8 @@ def batch_process_images(image_paths):
 ## 📞 技术支持
 
 - 🐛 问题反馈: [GitHub Issues](https://github.com/SunvidWong/hailo8/issues)
-- 📖 完整文档: [containers/README_STANDARD.md](containers/README_STANDARD.md)
-- 🔧 详细配置: [containers/AI_ACCELERATION_GUIDE.md](containers/AI_ACCELERATION_GUIDE.md)
+- 📖 完整文档: [containers/AI_ACCELERATION_GUIDE.md](containers/AI_ACCELERATION_GUIDE.md)
+- 🔧 详细配置: [containers/NVIDIA_CONTAINER_SETUP.md](containers/NVIDIA_CONTAINER_SETUP.md)
 
 ---
 
