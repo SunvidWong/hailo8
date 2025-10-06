@@ -107,7 +107,7 @@ version: '3.9'
 services:
   # Hailo8 + NVIDIA 双硬件AI推理服务
   hailo8-ai:
-    image: ghcr.io/sunvidwong/hailo8-nvidia-hailo:latest
+    image: sunvidwong/hailo8-nvidia-hailo:latest
     container_name: hailo8-ai
     restart: unless-stopped
     privileged: true

@@ -1,12 +1,10 @@
 # Hailo8 + NVIDIA AI加速服务部署配置
-# 根据标准格式编写
-
-version: '3.9'
+# 根据最新Docker Compose规范编写
 
 services:
   # Hailo8 + NVIDIA 双硬件AI推理服务
   hailo8-ai:
-    image: ghcr.io/sunvidwong/hailo8-nvidia-hailo:latest
+    image: sunvidwong/hailo8-nvidia-hailo:latest
     container_name: hailo8-ai
     restart: unless-stopped
     shm_size: "256mb"
