@@ -167,6 +167,59 @@ curl http://localhost:8000/health
 
 ---
 
+## 🌐 网络连接问题解决方案
+
+### 🔧 常见网络问题
+
+**Docker Hub连接失败**:
+```
+Error response from daemon: Get "https://registry-1.docker.io/v2/":
+read tcp xx.xx.xx.xx:xx -> xx.xx.xx.xx:443: read: connection reset by peer
+```
+
+**解决方案**:
+
+#### 方案1：本地构建（推荐）
+```bash
+# 克隆项目并本地构建
+git clone https://github.com/SunvidWong/hailo8.git
+cd hailo8/containers
+docker-compose -f docker-compose.hailo8-local.yml up -d
+```
+
+#### 方案2：配置国内镜像源
+```bash
+# 配置Docker镜像加速器
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json <<EOF
+{
+  "registry-mirrors": [
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://hub-mirror.c.163.com"
+  ]
+}
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+# 使用更新后的配置
+docker-compose -f docker-compose.hailo8-deploy.yml up -d
+```
+
+### 📋 配置文件对比
+
+| 配置文件 | 镜像地址 | 适用场景 |
+|----------|----------|----------|
+| `docker-compose.hailo8-local.yml` | 本地构建 | 网络问题 ⭐ |
+| `docker-compose.hailo8-deploy.yml` | Docker Hub | 正常网络 |
+| `docker-compose.official.yml` | 官方配置 | 开发环境 |
+
+### 🔍 详细文档
+完整的问题解决方案请查看：[NETWORK_TROUBLESHOOTING.md](NETWORK_TROUBLESHOOTING.md)
+
+---
+
 ## 🔧 API使用示例
 
 ### 基础API调用
