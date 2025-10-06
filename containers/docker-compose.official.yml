@@ -1,0 +1,124 @@
+# Hailo8 + NVIDIA AI加速服务 - Docker官方规范格式
+# 遵循Docker Compose Specification最新标准
+
+services:
+  # Hailo8 + NVIDIA 双硬件AI加速服务
+  hailo8-ai:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+      args:
+        SUPPORT_NVIDIA: "true"
+        SUPPORT_HAILO: "true"
+    image: hailo8/nvidia-hailo:latest
+    container_name: hailo8-ai
+    restart: unless-stopped
+    shm_size: 256mb
+    privileged: true
+
+    # NVIDIA GPU支持 - Docker官方规范
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    ports:
+      - target: 8000
+        published: 8000
+        protocol: tcp
+        mode: host
+      - target: 50051
+        published: 50051
+        protocol: tcp
+        mode: host
+
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: ./models
+        target: /app/models
+      - type: bind
+        source: ./logs
+        target: /app/logs
+      - type: bind
+        source: /dev/hailo0
+        target: /dev/hailo0
+      - type: bind
+        source: /dev/hailo1
+        target: /dev/hailo1
+      - type: bind
+        source: /dev/dri
+        target: /dev/dri
+      - type: bind
+        source: /lib/modules
+        target: /lib/modules
+        read_only: true
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+
+    environment:
+      HAILO_API_HOST: "0.0.0.0"
+      HAILO_API_PORT: "8000"
+      HAILO_GRPC_PORT: "50051"
+      LOG_LEVEL: "INFO"
+      DEBUG: "false"
+      SUPPORT_HAILO: "true"
+      SUPPORT_NVIDIA: "true"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+      CUDA_VISIBLE_DEVICES: "all"
+      CUDA_MODULE_LOADING: "LAZY"
+      DEFAULT_ENGINE: "auto"
+      FALLBACK_ENGINE: "hailo"
+      REDIS_URL: "redis://redis:6379"
+      CACHE_ENABLED: "true"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: hailo8-redis
+    restart: unless-stopped
+
+    ports:
+      - target: 6379
+        published: 6379
+        protocol: tcp
+        mode: host
+
+    volumes:
+      - type: volume
+        source: redis_data
+        target: /data
+
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# 数据卷定义
+volumes:
+  redis_data:
+    driver: local
+    name: hailo8_redis_data
