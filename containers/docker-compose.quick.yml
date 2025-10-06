@@ -1,0 +1,96 @@
+# Hailo8 快速部署配置
+# 简化版本，适用于快速测试和小规模部署
+
+version: '3.8'
+
+services:
+  # Hailo8 核心服务
+  hailo-runtime:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+    image: hailo8/runtime:latest
+    container_name: hailo-runtime
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "8000:8000"    # HTTP API
+      - "50051:50051"  # gRPC服务
+    volumes:
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    environment:
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - LOG_LEVEL=INFO
+      - DEBUG=false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis缓存
+  redis:
+    image: redis:7-alpine
+    container_name: hailo-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  # Web界面
+  hailo-web-app:
+    build:
+      context: ./hailo-web-app
+      dockerfile: Dockerfile
+    image: hailo8/web-app:latest
+    container_name: hailo-web-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    depends_on:
+      - hailo-runtime
+
+  # AI服务
+  hailo-ai-service:
+    build:
+      context: ./hailo-ai-service
+      dockerfile: Dockerfile
+    image: hailo8/ai-service:latest
+    container_name: hailo-ai-service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - HAILO_API_URL=http://hailo-runtime:8000
+      - SERVICE_PORT=8080
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - hailo-runtime
+
+  # 简单监控
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: hailo-portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  redis_data:
+  portainer_data:
+
+networks:
+  default:
+    name: hailo8-network
