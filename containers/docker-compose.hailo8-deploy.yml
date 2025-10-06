@@ -6,13 +6,7 @@ version: '3.9'
 services:
   # Hailo8 + NVIDIA 双硬件AI推理服务
   hailo8-ai:
-    build:
-      context: ./hailo-runtime
-      dockerfile: Dockerfile
-      args:
-        - SUPPORT_NVIDIA=true
-        - SUPPORT_HAILO=true
-    image: hailo8/nvidia-hailo:latest
+    image: ghcr.io/sunvidwong/hailo8-nvidia-hailo:latest
     container_name: hailo8-ai
     restart: unless-stopped
     shm_size: "256mb"

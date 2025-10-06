@@ -18,27 +18,40 @@
 ### 安装步骤
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/SunvidWong/hailo8.git
-cd hailo8/containers
+# 1. 准备部署目录
+mkdir hailo8-deploy
+cd hailo8-deploy
 
-# 2. 安装NVIDIA Container Toolkit (仅NVIDIA用户)
+# 2. 下载部署配置文件
+wget https://raw.githubusercontent.com/SunvidWong/hailo8/main/containers/docker-compose.hailo8-deploy.yml
+
+# 3. 安装NVIDIA Container Toolkit (仅NVIDIA用户)
 curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add
 distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
 curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
 sudo apt update && sudo apt install -y nvidia-docker2
 sudo systemctl restart docker
 
-# 3. 验证NVIDIA支持 (仅NVIDIA用户)
+# 4. 验证NVIDIA支持 (仅NVIDIA用户)
 docker run --rm --gpus all nvidia/cuda:12.1.0-base nvidia-smi
 
-# 4. 启动AI加速服务
+# 5. 创建必要的目录
+mkdir -p models logs monitoring/{grafana/{dashboards,datasources}}
+
+# 6. 启动AI加速服务
 docker-compose -f docker-compose.hailo8-deploy.yml up -d
 
-# 5. 验证部署
+# 7. 验证部署
 curl http://localhost:8000/health
 curl http://localhost:8000/ai/hardware
 ```
+
+### 镜像说明
+
+- **镜像地址**: `ghcr.io/sunvidwong/hailo8-nvidia-hailo:latest`
+- **镜像来源**: GitHub Container Registry
+- **支持硬件**: Hailo8 PCIe + NVIDIA GPU
+- **更新方式**: 自动跟随主分支更新
 
 ## 📱 服务访问
 
