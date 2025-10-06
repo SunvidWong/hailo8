@@ -1,0 +1,233 @@
+# Frigate配置文件 - 集成Hailo8推理服务
+
+# 基本配置
+mqtt:
+  host: mosquitto
+  port: 1883
+  topic_prefix: frigate
+  user: frigate
+  password: frigate
+
+# 数据库
+database:
+  path: /config/frigate.db
+
+# 摄像头配置 (根据您的实际情况修改)
+cameras:
+  # 示例摄像头1 - 支持Hailo8推理
+  front_door:
+    ffmpeg:
+      inputs:
+        - path: rtsp://admin:password@192.168.1.100:554/stream
+          roles:
+            - detect
+            - rtmp
+            - record
+    detect:
+      width: 1280
+      height: 720
+      fps: 5
+    objects:
+      track:
+        - person
+        - car
+        - bicycle
+        - motorcycle
+        - dog
+        - cat
+
+  # 示例摄像头2
+  backyard:
+    ffmpeg:
+      inputs:
+        - path: rtsp://admin:password@192.168.1.101:554/stream
+          roles:
+            - detect
+            - rtmp
+            - record
+    detect:
+      width: 1920
+      height: 1080
+      fps: 5
+    objects:
+      track:
+        - person
+        - car
+        - dog
+        - cat
+
+# Hailo8推理配置
+detectors:
+  # Hailo8推理检测器
+  hailo8_detector:
+    type: remote
+    model:
+      path: http://hailo-runtime-frigate:8000/frigate/model_info
+      # 模型会自动从Hailo8推理服务获取
+    # 推理API配置
+    api:
+      url: http://hailo-runtime-frigate:8000/frigate/detect
+      timeout: 5  # 推理超时时间(秒)
+      max_retries: 3  # 最大重试次数
+    # 推理参数
+    threshold: 0.4  # 置信度阈值
+    max_detections: 20  # 最大检测数量
+
+# 对象检测配置
+objects:
+  filters:
+    # 人员检测过滤
+    person:
+      min_area: 1000  # 最小面积(像素)
+      max_area: 50000  # 最大面积(像素)
+      min_score: 0.4   # 最小置信度
+      threshold: 0.5   # 过滤阈值
+
+    # 车辆检测过滤
+    car:
+      min_area: 2000
+      max_area: 80000
+      min_score: 0.4
+      threshold: 0.6
+
+    # 动物检测过滤
+    dog:
+      min_area: 500
+      max_area: 20000
+      min_score: 0.4
+      threshold: 0.4
+
+    cat:
+      min_area: 400
+      max_area: 15000
+      min_score: 0.4
+      threshold: 0.4
+
+# 检测区域配置
+zones:
+  # 前门区域 (用于触发报警)
+  front_door_zone:
+    coordinates: 100,100,400,100,400,300,100,300
+    objects:
+      - person
+      - dog
+      - cat
+
+  # 车道区域 (车辆检测)
+  driveway_zone:
+    coordinates: 0,600,1280,600,1280,720,0,720
+    objects:
+      - car
+      - motorcycle
+      - bicycle
+
+# 追踪配置
+track:
+  # 轨迹保留时间(秒)
+  stationary:
+    threshold: 120
+    interval: 30
+
+# 录像配置
+record:
+  # 启用录像
+  enabled: true
+  # 录像保留天数
+  retain:
+    days: 7
+  # 录像事件
+  events:
+    # 录制检测到对象的片段
+    enabled: true
+    # 录制前预录(秒)
+    pre_capture: 5
+    # 录制后延长(秒)
+    post_capture: 10
+    # 录制对象
+    objects:
+      - person
+      - car
+      - dog
+      - cat
+      - bicycle
+      - motorcycle
+
+# 快照配置
+snapshots:
+  # 启用快照
+  enabled: true
+  # 快照保存路径
+  timestamp: true
+  # 生成快照的对象
+  objects:
+    - person
+    - car
+    - dog
+    - cat
+  # 快照质量
+  quality: 80
+  # 生成快照的间隔(秒)
+  timestamp_format: '%Y-%m-%d_%H-%M-%S'
+
+# 推送通知配置
+birdseye:
+  # 鸟瞰图配置
+  enabled: true
+  # 快照间隔(秒)
+  mode: continuous
+  # 鸟瞰图布局
+  width: 1920
+  height: 1080
+  # 摄像头布局
+  cameras:
+    - front_door
+    - backyard
+
+# Web界面配置
+web_port: 5000
+
+# RTSP流配置
+rtsp:
+  # RTSP端口
+  port: 8554
+  # RTSP认证
+  password: frigate
+  # 编码设置
+  encoding: libx264
+  # 输出设置
+  output_args:
+    # 录制流输出参数
+    record: -f segment -segment_time 600 -segment_format mp4 -reset_timestamps 1 -strftime 1 -c:v libx264 -c:a aac
+    # 快照流输出参数
+    snapshot: -f image2
+
+# 性能优化配置
+detectors:
+  # Hailo8推理性能优化
+  hailo8_detector:
+    # 批处理大小
+    batch_size: 1
+    # 推理间隔(毫秒)
+    interval: 100
+    # 线程数
+    threads: 2
+    # 内存限制(MB)
+    memory_limit: 1024
+
+# 日志配置
+logger:
+  # 日志级别
+  default: info
+  # 日志文件
+  logs:
+    frigate: info
+    frigate.api: info
+    frigate.object_detect: info
+    frigate.nvr: info
+
+# 预览配置
+go2rtc:
+  # Go2RTC配置 (WebRTC支持)
+  rtc:
+    candidates: stun:stun.l.google.com:19302
+    udp_port_range: 50000-60000

@@ -1,0 +1,153 @@
+# Hailo8 Frigate API服务
+# 为外部Frigate容器提供推理API服务
+
+version: '3.8'
+
+services:
+  # Hailo8 Runtime服务 (为Frigate提供推理API)
+  hailo-runtime:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+    image: hailo8/frigate-api:latest
+    container_name: hailo8-frigate-api
+    restart: unless-stopped
+    privileged: true  # 需要访问Hailo硬件
+
+    ports:
+      - "8000:8000"    # HTTP API
+      - "50051:50051"  # gRPC服务
+
+    volumes:
+      # Hailo硬件设备访问
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      # 内核模块
+      - /lib/modules:/lib/modules:ro
+      # 模型文件存储 (Frigate模型)
+      - ./models/frigate:/app/models:ro
+      # 日志文件
+      - ./logs/hailo:/app/logs
+      # 临时文件
+      - ./temp:/app/temp
+
+    environment:
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - HAILO_GRPC_PORT=50051
+      - LOG_LEVEL=INFO
+      - DEBUG=false
+      - FRIGATE_MODE=true  # Frigate集成模式
+      - MODEL_NAME=yolov8n_hailo  # Frigate专用模型
+
+    healthcheck:
+      test: ["CMD", "/app/scripts/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    networks:
+      - hailo-frigate-network
+
+  # Redis缓存服务 (可选，用于缓存推理结果)
+  redis:
+    image: redis:7-alpine
+    container_name: hailo8-frigate-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    command: redis-server --appendonly yes --requirepass frigate_api
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    networks:
+      - hailo-frigate-network
+
+  # Prometheus监控 (可选)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: hailo8-frigate-prometheus
+    restart: unless-stopped
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./monitoring/frigate/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+
+    networks:
+      - hailo-frigate-network
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana可视化 (可选)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hailo8-frigate-grafana
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=hailo8
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/frigate/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/frigate/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+
+    depends_on:
+      - prometheus
+
+    networks:
+      - hailo-frigate-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# 数据卷定义
+volumes:
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+# 网络配置
+networks:
+  hailo-frigate-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16
+          gateway: 172.22.0.1
+    labels:
+      - "com.docker.compose.project=hailo8-frigate"

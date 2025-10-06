@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from api import inference, models, device
 from api.config import settings
+from api.frigate_adapter import frigate_router, init_frigate_adapter
 
 # 配置日志
 logging.basicConfig(
@@ -38,7 +39,7 @@ hailo_inference_service = None
 async def lifespan(app: FastAPI):
     """
     应用生命周期管理
-    启动时初始化Hailo服务，关闭时清理资源
+    启动时初始化Hailo服务和Frigate适配器，关闭时清理资源
     """
     global hailo_inference_service
 
@@ -49,12 +50,16 @@ async def lifespan(app: FastAPI):
         hailo_inference_service = inference.HailoInferenceService()
         await hailo_inference_service.initialize()
 
+        # 初始化Frigate适配器
+        await init_frigate_adapter()
+
         # 启动gRPC服务
         grpc_task = asyncio.create_task(
             inference.start_grpc_server(settings.GRPC_PORT)
         )
 
         logger.info("✅ Hailo8服务初始化完成")
+        logger.info("✅ Frigate适配器初始化完成")
 
         yield
 
@@ -81,7 +86,7 @@ async def lifespan(app: FastAPI):
 # 创建FastAPI应用
 app = FastAPI(
     title="Hailo8 Runtime API",
-    description="Hailo8 AI推理服务API",
+    description="Hailo8 AI推理服务API - 支持Frigate集成",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -97,7 +102,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # 根路径
 @app.get("/")
 async def root():
@@ -105,13 +109,13 @@ async def root():
     return {
         "service": "Hailo8 Runtime API",
         "version": "1.0.0",
+        "frigate_support": True,
         "status": "running",
         "endpoints": {
             "health": "/health",
             "ready": "/ready",
-            "inference": "/api/v1/inference",
-            "models": "/api/v1/models",
-            "device": "/api/v1/device",
+            "api": "/api/v1",
+            "frigate": "/frigate",
             "docs": "/docs"
         }
     }
@@ -133,7 +137,8 @@ async def readiness_check():
 
     return {
         "status": "ready",
-        "device_status": await hailo_inference_service.get_device_status()
+        "device_status": await hailo_inference_service.get_device_status(),
+        "frigate_adapter": await frigate_adapter.health_check()
     }
 
 
@@ -154,6 +159,12 @@ app.include_router(
     device.router,
     prefix="/api/v1/device",
     tags=["device"]
+)
+
+# 注册Frigate API路由
+app.include_router(
+    frigate_router,
+    tags=["frigate"]
 )
 
 
@@ -197,6 +208,11 @@ def main():
     """主函数"""
     logger.info(f"🚀 启动Hailo8 Runtime API服务")
     logger.info(f"📝 配置: {settings.dict()}")
+
+    # 检查是否启用Frigate模式
+    frigate_mode = os.getenv('FRIGATE_MODE', 'false').lower() == 'true'
+    if frigate_mode:
+        logger.info("🔗 Frigate集成模式已启用")
 
     # 启动uvicorn服务器
     uvicorn.run(

@@ -1,0 +1,268 @@
+# 零配置 Hailo8 + NVIDIA + Frigate 完整AI监控方案
+# 一键部署即可让Frigate自动调用双硬件AI加速
+
+version: '3.8'
+
+services:
+  # Hailo8 + NVIDIA 双硬件AI加速服务
+  ai-acceleration-service:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+      args:
+        - SUPPORT_NVIDIA=true
+        - SUPPORT_HAILO=true
+    image: hailo8/nvidia-hailo:latest
+    container_name: ai-acceleration-service
+    restart: unless-stopped
+    privileged: true
+
+    ports:
+      - "8000:8000"    # HTTP API
+      - "50051:50051"  # gRPC服务
+
+    volumes:
+      # 硬件设备访问
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      # 内核模块
+      - /lib/modules:/lib/modules:ro
+      # 模型文件和配置
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+      # Frigate配置目录
+      - ./config:/config:rw
+      - ./temp:/app/temp
+
+    environment:
+      # 基础配置
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - LOG_LEVEL=INFO
+      - DEBUG=false
+
+      # 硬件支持
+      - SUPPORT_HAILO=true
+      - SUPPORT_NVIDIA=true
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=all
+
+      # 推理引擎配置
+      - DEFAULT_ENGINE=auto
+      - FALLBACK_ENGINE=hailo
+
+      # Frigate自动集成
+      - FRIGATE_AUTO_DISCOVERY=true
+      - FRIGATE_CONFIG_AUTO_GENERATE=true
+      - FRIGATE_ZERO_CONFIG=true
+
+      # 缓存配置
+      - REDIS_URL=redis://redis:6379
+      - CACHE_ENABLED=true
+
+    healthcheck:
+      test: ["CMD", "/app/scripts/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    networks:
+      - ai-monitoring-network
+
+  # Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: ai-monitoring-redis
+    restart: unless-stopped
+
+    volumes:
+      - redis_data:/data
+
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+    networks:
+      - ai-monitoring-network
+
+  # Frigate NVR (零配置版)
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:stable
+    container_name: frigate-zero-config
+    restart: unless-stopped
+
+    ports:
+      - "5000:5000"    # Web界面
+      - "1935:1935"   # RTMP流
+      - "8554:8554"   # RTSP流
+      - "8555:8555"   # WebRTC
+
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./config/frigate.yml:/config/config.yml:ro
+      - ./media/frigate:/media/frigate
+      - ./logs/frigate:/config/logs
+
+    environment:
+      # 自动配置
+      - FRIGATE_ZERO_CONFIG=true
+      - DETECTOR_NAME=auto
+      - AI_SERVICE_URL=http://ai-acceleration-service:8000
+      - FRS_AUTO_DETECT=true
+
+      # 性能优化
+      - FRIGATE_RTSP_PASSWORD=frigate
+      - FRIGATE_MQTT_USERNAME=frigate
+      - FRIGATE_MQTT_PASSWORD=frigate
+
+    depends_on:
+      ai-acceleration-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    networks:
+      - ai-monitoring-network
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # MQTT消息队列 (用于Frigate事件)
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    container_name: ai-monitoring-mqtt
+    restart: unless-stopped
+
+    ports:
+      - "1883:1883"   # MQTT
+      - "9001:9001"   # WebSocket
+
+    volumes:
+      - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./config/passwd:/mosquitto/config/passwd:ro
+      - mqtt_data:/mosquitto/data
+      - mqtt_logs:/mosquitto/log
+
+    networks:
+      - ai-monitoring-network
+
+  # 自动配置服务 (在启动时配置Frigate)
+  auto-configurator:
+    image: alpine:3.18
+    container_name: ai-auto-configurator
+    restart: "no"
+
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./config:/config:rw
+
+    command: >
+      sh -c "
+        echo '🔧 开始自动配置...' &&
+        apk add --no-cache curl jq &&
+
+        # 等待AI服务启动
+        echo '⏳ 等待AI加速服务启动...' &&
+        while ! curl -s http://ai-acceleration-service:8000/health > /dev/null; do
+          sleep 2;
+        done;
+        echo '✅ AI加速服务已启动';
+
+        # 自动生成Frigate配置
+        echo '🔍 检测硬件并生成Frigate配置...' &&
+        curl -s http://ai-acceleration-service:8000/frigate/config | jq -r '.yaml_content' > /config/frigate.yml &&
+        echo '✅ Frigate配置已生成';
+
+        # 显示配置信息
+        echo '📋 生成的配置信息:' &&
+        curl -s http://ai-acceleration-service:8000/frigate/status | jq '.';
+
+        echo '🎉 自动配置完成!';
+      "
+
+    depends_on:
+      ai-acceleration-service:
+        condition: service_healthy
+
+    networks:
+      - ai-monitoring-network
+
+  # 监控服务
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai-monitoring-prometheus
+    restart: unless-stopped
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+
+    networks:
+      - ai-monitoring-network
+
+  # Grafana可视化
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai-monitoring-grafana
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=hailo8_frigate
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+
+    networks:
+      - ai-monitoring-network
+
+# 数据卷定义
+volumes:
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  mqtt_data:
+    driver: local
+  mqtt_logs:
+    driver: local
+
+# 网络配置
+networks:
+  ai-monitoring-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.24.0.0/16
+          gateway: 172.24.0.1
+    labels:
+      - "com.docker.compose.project=hailo8-frigate-zero-config"

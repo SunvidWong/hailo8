@@ -1,0 +1,205 @@
+# Hailo8 + Frigate 集成配置
+# 让Frigate直接使用Hailo8进行AI推理加速
+
+version: '3.8'
+
+services:
+  # Hailo8 Runtime服务 (为Frigate提供推理API)
+  hailo-runtime:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+    image: hailo8/runtime:latest
+    container_name: hailo-runtime-frigate
+    restart: unless-stopped
+    privileged: true  # 需要访问Hailo硬件
+
+    ports:
+      - "8000:8000"    # HTTP API
+      - "50051:50051"  # gRPC服务
+
+    volumes:
+      # Hailo硬件设备访问
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      # 内核模块
+      - /lib/modules:/lib/modules:ro
+      # 模型文件存储
+      - ./models/frigate:/app/models:ro
+      # 日志文件
+      - ./logs/hailo:/app/logs
+      # 临时文件
+      - ./temp:/app/temp
+
+    environment:
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - HAILO_GRPC_PORT=50051
+      - LOG_LEVEL=INFO
+      - DEBUG=false
+      - FRIGATE_MODE=true  # Frigate集成模式
+      - MODEL_NAME=yolov8n_hailo  # Frigate专用模型
+
+    healthcheck:
+      test: ["CMD", "/app/scripts/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    networks:
+      - frigate-network
+
+  # Frigate NVR服务
+  frigate:
+    image: ghcr.io/blakeblanchard/frigate:stable
+    container_name: frigate
+    restart: unless-stopped
+
+    ports:
+      - "5000:5000"    # Frigate Web界面
+      - "8554:8554"    # RTSP流
+      - "8555:8555/udp" # WebRTC
+
+    volumes:
+      # 配置文件
+      - ./config/frigate:/config
+      # 存储目录
+      - ./media:/media/frigate
+      # 时区配置
+      - /etc/localtime:/etc/localtime:ro
+
+    environment:
+      - FRIGATE_RTSP_PASSWORD=frigate
+      - FRIGATE_MQTT_HOST=mosquitto
+      - FRIGATE_MQTT_USERNAME=frigate
+      - FRIGATE_MQTT_PASSWORD=frigate
+      - TZ=Asia/Shanghai
+
+    # 设备访问 (摄像头和GPU)
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+      - /dev/dri:/dev/dri
+
+    depends_on:
+      hailo-runtime:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+
+    networks:
+      - frigate-network
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MQTT Broker (Frigate通信)
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: frigate-mosquitto
+    restart: unless-stopped
+
+    ports:
+      - "1883:1883"    # MQTT
+      - "9001:9001"    # WebSocket MQTT
+
+    volumes:
+      - ./config/mosquitto:/mosquitto/config
+      - ./logs/mosquitto:/mosquitto/log
+      - ./data/mosquitto:/mosquitto/data
+
+    environment:
+      - MOSQUITTO_USERNAME=frigate
+      - MOSQUITTO_PASSWORD=frigate
+
+    networks:
+      - frigate-network
+
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "test", "-m", "health_check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis (缓存和会话存储)
+  redis:
+    image: redis:7-alpine
+    container_name: frigate-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    command: redis-server --appendonly yes --requirepass frigate
+
+    networks:
+      - frigate-network
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Home Assistant (可选)
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+
+    ports:
+      - "8123:8123"
+
+    volumes:
+      - ./config/homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+
+    environment:
+      - TZ=Asia/Shanghai
+
+    depends_on:
+      - frigate
+      - mosquitto
+
+    networks:
+      - frigate-network
+
+    privileged: true
+
+  # 监控面板
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: frigate-portainer
+    restart: unless-stopped
+
+    ports:
+      - "9000:9000"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+    networks:
+      - frigate-network
+
+# 数据卷定义
+volumes:
+  redis_data:
+    driver: local
+  portainer_data:
+    driver: local
+
+# 网络配置
+networks:
+  frigate-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1
