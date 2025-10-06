@@ -1,0 +1,58 @@
+# 标准Docker Compose配置 - Hailo8 + NVIDIA AI加速服务
+# version: '3.9'
+
+services:
+  # Hailo8 + NVIDIA 双硬件AI加速服务
+  ai-acceleration:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+      args:
+        - SUPPORT_NVIDIA=true
+        - SUPPORT_HAILO=true
+    image: hailo8/nvidia-hailo:latest
+    container_name: ai-acceleration
+    restart: unless-stopped
+    privileged: true
+    shm_size: "256mb"
+
+    ports:
+      - "8000:8000"
+      - "50051:50051"
+
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+
+    environment:
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - SUPPORT_HAILO=true
+      - SUPPORT_NVIDIA=true
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=all
+      - DEFAULT_ENGINE=auto
+
+  # Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: ai-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru

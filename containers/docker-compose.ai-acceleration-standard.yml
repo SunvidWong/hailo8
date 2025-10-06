@@ -1,0 +1,148 @@
+# 标准Docker Compose配置 - Hailo8 + NVIDIA AI加速服务
+# 为其他容器提供AI推理加速API服务
+
+version: '3.9'
+
+services:
+  # Hailo8 + NVIDIA 双硬件AI加速服务
+  ai-acceleration-service:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+      args:
+        - SUPPORT_NVIDIA=true
+        - SUPPORT_HAILO=true
+    image: hailo8/nvidia-hailo:latest
+    container_name: ai-acceleration-service
+    restart: unless-stopped
+    privileged: true
+
+    ports:
+      - "8000:8000"    # HTTP API
+      - "50051:50051"  # gRPC服务
+
+    volumes:
+      # 硬件设备访问
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      # 内核模块
+      - /lib/modules:/lib/modules:ro
+      # 模型文件和日志
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+      # 临时文件
+      - ./temp:/app/temp
+
+    environment:
+      # 基础配置
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - HAILO_GRPC_PORT=50051
+      - LOG_LEVEL=INFO
+      - DEBUG=false
+
+      # 硬件支持配置
+      - SUPPORT_HAILO=true
+      - SUPPORT_NVIDIA=true
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=all
+
+      # 推理引擎配置
+      - DEFAULT_ENGINE=auto
+      - FALLBACK_ENGINE=hailo
+
+      # 缓存配置
+      - REDIS_URL=redis://redis:6379
+      - CACHE_ENABLED=true
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: ai-acceleration-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # 监控服务 (可选)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai-acceleration-prometheus
+    restart: unless-stopped
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+
+    profiles:
+      - monitoring
+
+  # Grafana可视化 (可选)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai-acceleration-grafana
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=hailo8_nvidia
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+
+    depends_on:
+      - prometheus
+
+    profiles:
+      - monitoring
+
+# 数据卷定义
+volumes:
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+# 网络配置
+networks:
+  default:
+    name: ai-acceleration-network
+    driver: bridge

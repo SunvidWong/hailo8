@@ -1,0 +1,84 @@
+# Hailo8 + NVIDIA AI加速服务 - 标准Docker Compose配置
+# 为其他容器提供AI推理加速API
+
+version: '3.9'
+
+services:
+  # Hailo8 + NVIDIA 双硬件AI加速服务
+  hailo8-ai:
+    build:
+      context: ./hailo-runtime
+      dockerfile: Dockerfile
+      args:
+        - SUPPORT_NVIDIA=true
+        - SUPPORT_HAILO=true
+    image: hailo8/nvidia-hailo:latest
+    container_name: hailo8-ai
+    restart: unless-stopped
+    shm_size: "256mb"
+    privileged: true
+
+    ports:
+      - "8000:8000"
+      - "50051:50051"
+
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - /dev/hailo0:/dev/hailo0
+      - /dev/hailo1:/dev/hailo1
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+
+    environment:
+      - HAILO_API_HOST=0.0.0.0
+      - HAILO_API_PORT=8000
+      - HAILO_GRPC_PORT=50051
+      - LOG_LEVEL=INFO
+      - DEBUG=false
+      - SUPPORT_HAILO=true
+      - SUPPORT_NVIDIA=true
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=all
+      - DEFAULT_ENGINE=auto
+      - FALLBACK_ENGINE=hailo
+      - REDIS_URL=redis://redis:6379
+      - CACHE_ENABLED=true
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: hailo8-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# 数据卷定义
+volumes:
+  redis_data:
+    driver: local
