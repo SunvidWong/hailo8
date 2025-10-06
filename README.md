@@ -6,8 +6,6 @@
 
 本项目提供了一套完整的Hailo8 PCIe + NVIDIA GPU双硬件AI推理加速解决方案，通过Docker Compose容器化部署，为其他容器提供统一的AI推理API服务。
 
-![架构图](https://maas-log-prod.cn-wlcb.ufileos.com/anthropic/37cb952e-bf22-45fb-ab90-1bf74ce56b5c/19bca8642cc000fb1b8dec3a39b7f842.jpg?UCloudPublicKey=TOKEN_e15ba47a-d098-4fbd-9afc-a0dcf0e4e621&Expires=1759715004&Signature=sJPoOSljpc0B+A04yf9aqWNhXug=)
-
 ## 🎯 部署方案
 
 ### 方案一：容器化AI推理服务（推荐）⭐
